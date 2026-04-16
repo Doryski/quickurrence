@@ -1,0 +1,67 @@
+{
+  "name": "quickurrence",
+  "version": "0.1.0",
+  "description": "A powerful, type-safe recurrence rule engine for generating recurring dates with timezone support",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest --run",
+    "test:watch": "vitest --watch",
+    "type-check": "tsc --noEmit",
+    "prepublishOnly": "pnpm run build"
+  },
+  "keywords": [
+    "recurrence",
+    "recurring",
+    "schedule",
+    "cron",
+    "date",
+    "calendar",
+    "rrule",
+    "repeat",
+    "timezone",
+    "date-fns",
+    "zod",
+    "typescript"
+  ],
+  "author": "Dominik Rycharski (https://github.com/doryski)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/doryski/quickurrence"
+  },
+  "bugs": {
+    "url": "https://github.com/doryski/quickurrence/issues"
+  },
+  "homepage": "https://github.com/doryski/quickurrence#readme",
+  "peerDependencies": {
+    "@date-fns/tz": ">=1.0.0",
+    "date-fns": ">=4.0.0",
+    "zod": ">=3.0.0"
+  },
+  "devDependencies": {
+    "@date-fns/utc": "^2.1.1",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

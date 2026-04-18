@@ -16,8 +16,8 @@ describe('Quickurrence', () => {
 
       expect(rule.getRule()).toBe('daily');
       expect(rule.getStartDate()).toBeDefined();
-      // Should default to today
-      const today = startOfDay(new Date());
+      // Default timezone is UTC, so today must be computed in UTC.
+      const today = startOfDay(new Date(), { in: tz('UTC') });
       expect(rule.getStartDate()).toEqual(today);
     });
 
@@ -34,8 +34,8 @@ describe('Quickurrence', () => {
 
       expect(rule.getRule()).toBe('weekly');
       expect(rule.getStartDate()).toBeDefined();
-      // Should default to today
-      const today = startOfDay(new Date());
+      // Default timezone is UTC, so today must be computed in UTC.
+      const today = startOfDay(new Date(), { in: tz('UTC') });
       expect(rule.getStartDate()).toEqual(today);
     });
 
@@ -5187,7 +5187,9 @@ describe('Quickurrence', () => {
         expect(updatedOptions).toBeDefined();
         expect(updatedOptions!.interval).toBe(2);
         expect(updatedOptions!.rule).toBe('daily');
-        expect(updatedOptions!.startDate).toEqual(startOfDay(startDate));
+        expect(updatedOptions!.startDate).toEqual(
+          startOfDay(startDate, { in: tz('UTC') }),
+        );
       });
 
       it('should update end date', () => {
@@ -5236,7 +5238,9 @@ describe('Quickurrence', () => {
 
         expect(updatedOptions).toBeDefined();
         expect(updatedOptions!.rule).toBe('weekly');
-        expect(updatedOptions!.startDate).toEqual(startOfDay(startDate));
+        expect(updatedOptions!.startDate).toEqual(
+          startOfDay(startDate, { in: tz('UTC') }),
+        );
       });
     });
 
@@ -5501,7 +5505,9 @@ describe('Quickurrence', () => {
         });
 
         expect(updatedOptions).toBeDefined();
-        expect(updatedOptions!.startDate).toEqual(startOfDay(startDate));
+        expect(updatedOptions!.startDate).toEqual(
+          startOfDay(startDate, { in: tz('UTC') }),
+        );
       });
     });
 
@@ -5950,7 +5956,8 @@ describe('Quickurrence', () => {
         });
 
         // Verify that the start date is correctly identified as Tuesday (day 2)
-        const dayOfWeek = startDate.getDay();
+        // in UTC (the comment above marks 22:00 UTC = Tuesday).
+        const dayOfWeek = startDate.getUTCDay();
         expect(dayOfWeek).toBe(2); // Tuesday
 
         // Verify that Tuesday is included in weekDays

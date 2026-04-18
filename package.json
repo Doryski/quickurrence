@@ -1,6 +1,6 @@
 {
   "name": "quickurrence",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A powerful, type-safe recurrence rule engine for generating recurring dates with timezone support",
   "type": "module",
   "main": "dist/index.js",
@@ -45,12 +45,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/doryski/quickurrence"
+    "url": "https://github.com/Doryski/quickurrence"
   },
   "bugs": {
-    "url": "https://github.com/doryski/quickurrence/issues"
+    "url": "https://github.com/Doryski/quickurrence/issues"
   },
-  "homepage": "https://github.com/doryski/quickurrence#readme",
+  "homepage": "https://github.com/Doryski/quickurrence#readme",
   "peerDependencies": {
     "@date-fns/tz": ">=1.0.0",
     "date-fns": ">=4.0.0",

@@ -166,7 +166,7 @@ const main = async () => {
   console.log(
     `\n✓ Tag ${normalized} pushed. GitHub Actions will build, test, and publish to npm.`,
   );
-  console.log(`  Watch: https://github.com/doryski/quickurrence/actions`);
+  console.log(`  Watch: https://github.com/Doryski/quickurrence/actions`);
 };
 
 main().catch((err) => {

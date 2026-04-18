@@ -24,6 +24,7 @@
     "test": "vitest --run",
     "test:watch": "vitest --watch",
     "type-check": "tsc --noEmit",
+    "release": "tsx scripts/release.ts",
     "prepublishOnly": "pnpm run build"
   },
   "keywords": [
@@ -58,6 +59,7 @@
   "devDependencies": {
     "@date-fns/utc": "^2.1.1",
     "tsup": "^8.4.0",
+    "tsx": "^4.0.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   },

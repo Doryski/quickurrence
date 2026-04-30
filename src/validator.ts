@@ -44,6 +44,7 @@ export class QuickurrenceValidator {
     this.validateExcludeDates(excludeDates);
     this.validateCondition(condition);
     this.validatePreset(preset);
+    this.validateTimesOfDay(options.timesOfDay);
 
     // Validate rule-specific options
     this.validateWeeklyOptions(rule, weekDays);
@@ -569,6 +570,54 @@ export class QuickurrenceValidator {
           option: 'condition',
           value: condition,
           expected: 'Boolean or function that takes a Date and returns boolean',
+        },
+      );
+    }
+  }
+
+  /**
+   * Validate timesOfDay option ("HH:MM" 24-hour strings)
+   */
+  private static validateTimesOfDay(timesOfDay?: string[]): void {
+    if (timesOfDay === undefined) return;
+
+    if (!Array.isArray(timesOfDay) || timesOfDay.length === 0) {
+      throw QuickurrenceError.validation(
+        'timesOfDay must be a non-empty array',
+        QuickurrenceErrorCode.INVALID_TIMES_OF_DAY,
+        {
+          option: 'timesOfDay',
+          value: timesOfDay,
+          expected: 'Non-empty array of "HH:MM" strings',
+        },
+      );
+    }
+
+    const pattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const invalid = timesOfDay.filter(
+      (t) => typeof t !== 'string' || !pattern.test(t),
+    );
+    if (invalid.length > 0) {
+      throw QuickurrenceError.validation(
+        `Invalid timesOfDay values: ${invalid.join(', ')}. Must match "HH:MM" 24-hour format`,
+        QuickurrenceErrorCode.INVALID_TIMES_OF_DAY,
+        {
+          option: 'timesOfDay',
+          value: invalid,
+          expected: '"HH:MM" 24-hour strings (e.g., "09:00", "14:30")',
+        },
+      );
+    }
+
+    const unique = new Set(timesOfDay);
+    if (unique.size !== timesOfDay.length) {
+      throw QuickurrenceError.validation(
+        'timesOfDay cannot contain duplicate values',
+        QuickurrenceErrorCode.INVALID_TIMES_OF_DAY,
+        {
+          option: 'timesOfDay',
+          value: timesOfDay,
+          expected: 'Array with unique "HH:MM" values',
         },
       );
     }

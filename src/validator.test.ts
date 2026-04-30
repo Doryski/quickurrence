@@ -151,6 +151,17 @@ describe('QuickurrenceValidator', () => {
         QuickurrenceValidator.validateOptions(options);
       }).toThrow('startDate must be a valid Date object');
     });
+
+    it('should throw INVALID_START_DATE for null startDate (untyped JS callers)', () => {
+      const options: QuickurrenceOptions = {
+        startDate: null as unknown as Date,
+        rule: 'daily',
+      };
+
+      expect(() => {
+        QuickurrenceValidator.validateOptions(options);
+      }).toThrow('startDate must be a valid Date object');
+    });
   });
 
   describe('timezone validation', () => {

@@ -12,6 +12,10 @@ import {
   isEqual,
   lastDayOfMonth,
   nextDay,
+  setHours,
+  setMilliseconds,
+  setMinutes,
+  setSeconds,
   startOfDay,
   startOfWeek,
 } from 'date-fns';
@@ -88,6 +92,12 @@ const ConditionSchema = z.custom<Condition>().refine(
 );
 export const CountSchema = z.number().int().min(1);
 export const IntervalSchema = z.number().int().min(1);
+export const TimeOfDaySchema = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Must be "HH:MM" in 24-hour format');
+export type TimeOfDay = z.infer<typeof TimeOfDaySchema>;
+export const TimesOfDaySchema = z.array(TimeOfDaySchema).min(1);
+export type TimesOfDay = z.infer<typeof TimesOfDaySchema>;
 export const QuickurrenceOptionsSchema = z.object({
   startDate: z.date().optional(),
   rule: RecurrenceRuleSchema.optional(),
@@ -103,6 +113,7 @@ export const QuickurrenceOptionsSchema = z.object({
   excludeDates: z.array(z.date()).optional(),
   condition: ConditionSchema.optional(),
   preset: PresetSchema.optional(),
+  timesOfDay: TimesOfDaySchema.optional(),
 });
 export type QuickurrenceOptions = z.infer<typeof QuickurrenceOptionsSchema>;
 
@@ -132,6 +143,7 @@ export class Quickurrence {
   private excludeDates?: Date[];
   private condition?: Condition;
   private preset?: Preset;
+  private timesOfDay?: string[];
   private options: QuickurrenceOptions;
 
   /**
@@ -212,6 +224,10 @@ export class Quickurrence {
       options.condition = cleanedOptions.condition;
     }
 
+    if (cleanedOptions.timesOfDay && cleanedOptions.timesOfDay.length > 0) {
+      options.timesOfDay = [...cleanedOptions.timesOfDay];
+    }
+
     // Validate the options against the schema
     const validationResult = QuickurrenceOptionsSchema.safeParse(options);
     if (!validationResult.success) {
@@ -273,6 +289,9 @@ export class Quickurrence {
       weekDays: optionsWithDefaults.weekDays
         ? [...optionsWithDefaults.weekDays]
         : undefined,
+      timesOfDay: optionsWithDefaults.timesOfDay
+        ? [...optionsWithDefaults.timesOfDay]
+        : undefined,
       // condition is kept as-is since functions cannot be cloned
     };
     const {
@@ -289,6 +308,7 @@ export class Quickurrence {
       excludeDates,
       condition,
       preset,
+      timesOfDay,
     } = optionsWithDefaults;
     // Use the already normalized startDate from optionsWithDefaults
     this.startDate = startDate;
@@ -303,15 +323,24 @@ export class Quickurrence {
     this.nthWeekdayOfMonth = nthWeekdayOfMonth
       ? { ...nthWeekdayOfMonth }
       : undefined; // Copy the config
+    this.timesOfDay = timesOfDay
+      ? [...new Set(timesOfDay)].sort()
+      : undefined;
     this.excludeDates = excludeDates
-      ? excludeDates.map((date) => startOfDay(date, { in: tz(timezone) }))
-      : undefined; // Normalize excluded dates to start of day in the timezone
+      ? excludeDates.map((date) =>
+          this.timesOfDay
+            ? new Date(date)
+            : startOfDay(date, { in: tz(timezone) }),
+        )
+      : undefined;
     this.preset = preset;
     this.condition = condition;
 
-    // Normalize end date to start of day if provided
+    // Normalize end date to start of day if provided (preserve exact time when timesOfDay is set)
     if (endDate) {
-      this.endDate = startOfDay(endDate, { in: tz(timezone) });
+      this.endDate = this.timesOfDay
+        ? new Date(endDate)
+        : startOfDay(endDate, { in: tz(timezone) });
     }
   }
 
@@ -319,6 +348,16 @@ export class Quickurrence {
    * Get the next occurrence after the given date
    */
   getNextOccurrence(after: Date = new Date()): Date {
+    if (this.timesOfDay) {
+      return this.getNextOccurrenceWithTimes(after);
+    }
+    return this.getNextOccurrenceByDay(after);
+  }
+
+  /**
+   * Day-level next-occurrence path (no time-of-day expansion).
+   */
+  private getNextOccurrenceByDay(after: Date = new Date()): Date {
     // Special handling for weekly recurrence with weekDays
     if (this.rule === 'weekly' && this.weekDays) {
       return this.getNextWeeklyOccurrenceWithWeekDays(after);
@@ -425,6 +464,17 @@ export class Quickurrence {
    * Get all occurrences within the given date range
    */
   getAllOccurrences(range: DateRange): Date[] {
+    if (this.timesOfDay) {
+      return this.getAllOccurrencesWithTimes(range);
+    }
+    return this.collectDayOccurrences(range);
+  }
+
+  /**
+   * Internal day-level occurrence collection. Returns one Date per matching day,
+   * normalized to startOfDay. Public callers go through getAllOccurrences.
+   */
+  private collectDayOccurrences(range: DateRange): Date[] {
     // Special handling for weekly recurrence with weekDays
     if (this.rule === 'weekly' && this.weekDays) {
       return this.getAllWeeklyOccurrencesWithWeekDays(range);
@@ -455,7 +505,9 @@ export class Quickurrence {
 
     // If start date is before the range, find the first occurrence in range
     if (isBefore(current, startNormalized)) {
-      current = this.getNextOccurrence(new Date(startNormalized.getTime() - 1));
+      current = this.getNextOccurrenceByDay(
+        new Date(startNormalized.getTime() - 1),
+      );
     }
 
     // Collect all occurrences within the range
@@ -503,9 +555,102 @@ export class Quickurrence {
       return false;
     }
 
-    const normalizedDate = startOfDay(date, { in: tz(this.timezone) });
+    // When timesOfDay is set, exclusions match exact datetime; otherwise match day.
+    const target = this.timesOfDay
+      ? date
+      : startOfDay(date, { in: tz(this.timezone) });
     return this.excludeDates.some((excludeDate) =>
-      isEqual(excludeDate, normalizedDate),
+      isEqual(excludeDate, target),
+    );
+  }
+
+  /**
+   * Expand a day-level date into datetimes for each configured time-of-day.
+   * Returns the input as-is if timesOfDay is not configured.
+   */
+  private expandDayWithTimes(day: Date): Date[] {
+    if (!this.timesOfDay || this.timesOfDay.length === 0) {
+      return [day];
+    }
+    const dayStart = startOfDay(day, { in: tz(this.timezone) });
+    const opts = { in: tz(this.timezone) } as const;
+    return this.timesOfDay
+      .map((t) => {
+        const [hh, mm] = t.split(':').map(Number);
+        let d = setHours(dayStart, hh, opts);
+        d = setMinutes(d, mm, opts);
+        d = setSeconds(d, 0, opts);
+        d = setMilliseconds(d, 0, opts);
+        return d;
+      })
+      .sort((a, b) => a.getTime() - b.getTime());
+  }
+
+  /**
+   * Time-aware variant of getAllOccurrences. Collects days via the existing
+   * day-level branches, expands each into datetimes, then filters/caps.
+   */
+  private getAllOccurrencesWithTimes(range: DateRange): Date[] {
+    const dayRange: DateRange = {
+      start: startOfDay(range.start, { in: tz(this.timezone) }),
+      end: startOfDay(range.end, { in: tz(this.timezone) }),
+    };
+    const days = this.collectDayOccurrences(dayRange);
+    let datetimes = days.flatMap((d) => this.expandDayWithTimes(d));
+    datetimes = datetimes.filter(
+      (d) =>
+        !isBefore(d, range.start) &&
+        !isAfter(d, range.end) &&
+        (!this.endDate || !isAfter(d, this.endDate)) &&
+        !this.isDateExcluded(d),
+    );
+    datetimes.sort((a, b) => a.getTime() - b.getTime());
+    const dedup: Date[] = [];
+    for (const d of datetimes) {
+      if (
+        dedup.length === 0 ||
+        dedup[dedup.length - 1].getTime() !== d.getTime()
+      ) {
+        dedup.push(d);
+      }
+    }
+    return this.count !== undefined ? dedup.slice(0, this.count) : dedup;
+  }
+
+  /**
+   * Time-aware variant of getNextOccurrence.
+   */
+  private getNextOccurrenceWithTimes(after: Date): Date {
+    const windowStartReference = isAfter(after, this.startDate)
+      ? after
+      : this.startDate;
+    const range: DateRange = {
+      start: this.startDate,
+      end: addYears(windowStartReference, 10, { in: tz(this.timezone) }),
+    };
+    const all = this.getAllOccurrencesWithTimes(range);
+    for (const occ of all) {
+      if (isAfter(occ, after)) {
+        return occ;
+      }
+    }
+    if (this.count !== undefined) {
+      throw QuickurrenceError.runtime(
+        'No more occurrences within the specified count limit',
+        QuickurrenceErrorCode.COUNT_LIMIT_EXCEEDED,
+        {
+          operation: 'getNextOccurrence',
+          details: { countLimit: this.count },
+        },
+      );
+    }
+    throw QuickurrenceError.runtime(
+      'No more occurrences within the specified end date',
+      QuickurrenceErrorCode.END_DATE_EXCEEDED,
+      {
+        operation: 'getNextOccurrence',
+        details: { endDate: this.endDate, afterDate: after },
+      },
     );
   }
 
@@ -620,6 +765,13 @@ export class Quickurrence {
   }
 
   /**
+   * Get the timesOfDay setting for recurrence
+   */
+  getTimesOfDay(): string[] | undefined {
+    return this.timesOfDay ? [...this.timesOfDay] : undefined;
+  }
+
+  /**
    * Sort weekdays for display with Saturday before Sunday
    */
   public static sortWeekDaysForDisplay(weekDays: WeekDay[]): WeekDay[] {
@@ -701,6 +853,10 @@ export class Quickurrence {
 
     if (cleaned.excludeDates && cleaned.excludeDates.length === 0) {
       delete cleaned.excludeDates;
+    }
+
+    if (cleaned.timesOfDay && cleaned.timesOfDay.length === 0) {
+      delete cleaned.timesOfDay;
     }
 
     // Remove default values to keep options clean
@@ -1605,6 +1761,11 @@ export class Quickurrence {
                 this.nthWeekdayOfMonth.nth as number,
               );
         text += ` on the ${nthText} ${dayNames[this.nthWeekdayOfMonth.weekday]}`;
+      }
+
+      // Add times-of-day information
+      if (this.timesOfDay && this.timesOfDay.length > 0) {
+        text += ` at ${this.timesOfDay.join(', ')}`;
       }
 
       // Add preset information

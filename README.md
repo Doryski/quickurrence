@@ -87,6 +87,7 @@ The main class for defining and generating recurrence rules.
 | `excludeDates` | `Date[]` | No | Dates to exclude from the recurrence |
 | `condition` | `boolean \| ((date: Date) => boolean)` | No | Custom filter condition |
 | `preset` | `'businessDays' \| 'weekends'` | No | Predefined day-of-week filters |
+| `timesOfDay` | `string[]` (`"HH:MM"`) | No | Times of day to fire on each matching day (24-hour format, e.g. `['09:00', '14:30']`) |
 
 #### Methods
 
@@ -153,6 +154,8 @@ import {
   NthWeekdayOfMonthSchema,
   CountSchema,
   IntervalSchema,
+  TimeOfDaySchema,
+  TimesOfDaySchema,
   QuickurrenceOptionsSchema,
 } from 'quickurrence';
 ```
@@ -177,6 +180,23 @@ const lastFriday = new Quickurrence({
   timezone: 'America/New_York',
   nthWeekdayOfMonth: { weekday: 5, nth: 'last' },
 });
+```
+
+### Multiple Times Per Day
+
+```typescript
+// Every Monday and Wednesday at 09:00 and 14:30 (Warsaw wall-clock)
+const rule = new Quickurrence({
+  rule: 'weekly',
+  weekDays: [1, 3],
+  startDate: new Date('2026-01-05'),
+  timezone: 'Europe/Warsaw',
+  timesOfDay: ['09:00', '14:30'],
+});
+
+// Each datetime counts as one occurrence — `count: 5` returns 5 datetimes,
+// not 5 days. `endDate` and `excludeDates` are matched as exact datetimes
+// when `timesOfDay` is set. Wall-clock time is preserved across DST.
 ```
 
 ### Custom Conditions

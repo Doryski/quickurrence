@@ -6301,5 +6301,284 @@ describe('Quickurrence', () => {
       const result = Quickurrence.sortWeekDaysForDisplay(weekdays);
       expect(result).toEqual([3]);
     });
+
+    it('orders Saturday (6) before Sunday (0) when mixed with other days', () => {
+      const sorted = Quickurrence.sortWeekDaysForDisplay([0, 6, 1, 5]);
+      expect(sorted).toEqual([6, 0, 1, 5]);
+    });
+  });
+
+  describe('update() schema-failure path', () => {
+    it('throws when produced options fail final schema validation', () => {
+      // Force a non-Date startDate through the cast — survives clean(), fails schema.
+      expect(() =>
+        Quickurrence.update(
+          { rule: 'daily', startDate: new Date('2026-01-01') },
+          { startDate: 'not-a-date' as unknown as Date },
+        ),
+      ).toThrowError(/Invalid quickurrence options/);
+    });
+  });
+
+  describe('presetToOptions unknown preset', () => {
+    it('throws on unknown preset', () => {
+      expect(() =>
+        Quickurrence.presetToOptions('mystery' as unknown as 'businessDays'),
+      ).toThrowError(/Unknown preset/);
+    });
+  });
+
+  describe('getNextOccurrence end-date guard (day-level path)', () => {
+    it('throws END_DATE_EXCEEDED when after >= endDate', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: new Date('2026-01-01T00:00:00Z'),
+        endDate: new Date('2026-01-05T00:00:00Z'),
+        timezone: 'UTC',
+      });
+      expect(() =>
+        rule.getNextOccurrence(new Date('2026-01-10T00:00:00Z')),
+      ).toThrowError(/end date|END_DATE_EXCEEDED/i);
+    });
+  });
+
+  describe('weekly with single weekDay + interval > 1', () => {
+    it('exercises getNextWeekdayOccurrence nextDay branch', () => {
+      const rule = new Quickurrence({
+        rule: 'weekly',
+        startDate: new Date('2026-01-05T00:00:00Z'), // Mon
+        timezone: 'UTC',
+        weekDays: [3], // Wed only — startDate is Mon so nextDay branch fires
+        interval: 2,
+      });
+      const next = rule.getNextOccurrence(new Date('2026-01-04T00:00:00Z'));
+      expect(next.getTime()).toBe(new Date('2026-01-07T00:00:00Z').getTime());
+    });
+  });
+
+  describe('monthly with monthDay — boundary paths', () => {
+    it('throws COUNT_LIMIT_EXCEEDED past last counted occurrence', () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new Date('2026-01-15T00:00:00Z'),
+        timezone: 'UTC',
+        monthDay: 15,
+        count: 2,
+      });
+      expect(() =>
+        rule.getNextOccurrence(new Date('2026-04-15T00:00:00Z')),
+      ).toThrowError(/count limit|COUNT_LIMIT_EXCEEDED/i);
+    });
+
+    it('returns startDate occurrence when after < startDate', () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new Date('2026-06-15T00:00:00Z'),
+        timezone: 'UTC',
+        monthDay: 15,
+      });
+      const next = rule.getNextOccurrence(new Date('2026-01-01T00:00:00Z'));
+      expect(next.getTime()).toBe(new Date('2026-06-15T00:00:00Z').getTime());
+    });
+
+    it('throws END_DATE_EXCEEDED when window is exhausted', () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new Date('2026-01-15T00:00:00Z'),
+        endDate: new Date('2026-03-15T00:00:00Z'),
+        timezone: 'UTC',
+        monthDay: 15,
+      });
+      expect(() =>
+        rule.getNextOccurrence(new Date('2027-01-01T00:00:00Z')),
+      ).toThrowError(/end date|END_DATE_EXCEEDED/i);
+    });
+  });
+
+  describe('monthly with nthWeekdayOfMonth — boundary paths', () => {
+    it('throws COUNT_LIMIT_EXCEEDED past last counted occurrence', () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new Date('2026-01-01T00:00:00Z'),
+        timezone: 'UTC',
+        nthWeekdayOfMonth: { weekday: 2, nth: 2 }, // 2nd Tuesday
+        count: 2,
+      });
+      expect(() =>
+        rule.getNextOccurrence(new Date('2026-06-01T00:00:00Z')),
+      ).toThrowError(/count limit|COUNT_LIMIT_EXCEEDED/i);
+    });
+
+    it('returns startDate occurrence when after < startDate', () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new Date('2026-06-01T00:00:00Z'),
+        timezone: 'UTC',
+        nthWeekdayOfMonth: { weekday: 2, nth: 2 },
+      });
+      const next = rule.getNextOccurrence(new Date('2026-01-01T00:00:00Z'));
+      // 2nd Tuesday of June 2026 is 2026-06-09
+      expect(next.getTime()).toBe(new Date('2026-06-09T00:00:00Z').getTime());
+    });
+
+    it('throws END_DATE_EXCEEDED past endDate', () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new Date('2026-01-01T00:00:00Z'),
+        endDate: new Date('2026-03-01T00:00:00Z'),
+        timezone: 'UTC',
+        nthWeekdayOfMonth: { weekday: 2, nth: 2 },
+      });
+      expect(() =>
+        rule.getNextOccurrence(new Date('2027-01-01T00:00:00Z')),
+      ).toThrowError(/end date|END_DATE_EXCEEDED/i);
+    });
+
+    it("'last' nth: returns last weekday of month", () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new Date('2026-01-01T00:00:00Z'),
+        timezone: 'UTC',
+        nthWeekdayOfMonth: { weekday: 5, nth: 'last' },
+      });
+      const next = rule.getNextOccurrence(new Date('2026-01-01T00:00:00Z'));
+      expect(next.getTime()).toBe(new Date('2026-01-30T00:00:00Z').getTime()); // last Friday of Jan 2026
+    });
+  });
+
+  describe('toHumanText interval and terminator branches', () => {
+    it('handles interval > 1 for daily', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: new Date('2026-01-01'),
+        interval: 3,
+      });
+      expect(rule.toHumanText()).toMatch(/Every 3 days/);
+    });
+
+    it('handles interval > 1 for weekly', () => {
+      const rule = new Quickurrence({
+        rule: 'weekly',
+        startDate: new Date('2026-01-01'),
+        interval: 2,
+      });
+      expect(rule.toHumanText()).toMatch(/Every 2 weeks/);
+    });
+
+    it('handles interval > 1 for monthly', () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new Date('2026-01-01'),
+        interval: 2,
+      });
+      expect(rule.toHumanText()).toMatch(/Every 2 months/);
+    });
+
+    it('handles interval > 1 for yearly', () => {
+      const rule = new Quickurrence({
+        rule: 'yearly',
+        startDate: new Date('2026-01-01'),
+        interval: 2,
+      });
+      expect(rule.toHumanText()).toMatch(/Every 2 years/);
+    });
+
+    it('handles yearly with interval=1 (Yearly capitalize)', () => {
+      const rule = new Quickurrence({
+        rule: 'yearly',
+        startDate: new Date('2026-01-01'),
+      });
+      expect(rule.toHumanText()).toMatch(/^Yearly/);
+    });
+
+    it('mentions monthDay ordinals (1st, 2nd, 3rd, 11th)', () => {
+      expect(
+        new Quickurrence({
+          rule: 'monthly',
+          startDate: new Date('2026-01-01'),
+          monthDay: 1,
+        }).toHumanText(),
+      ).toMatch(/on the 1st/);
+      expect(
+        new Quickurrence({
+          rule: 'monthly',
+          startDate: new Date('2026-01-01'),
+          monthDay: 2,
+        }).toHumanText(),
+      ).toMatch(/on the 2nd/);
+      expect(
+        new Quickurrence({
+          rule: 'monthly',
+          startDate: new Date('2026-01-01'),
+          monthDay: 3,
+        }).toHumanText(),
+      ).toMatch(/on the 3rd/);
+      expect(
+        new Quickurrence({
+          rule: 'monthly',
+          startDate: new Date('2026-01-01'),
+          monthDay: 11,
+        }).toHumanText(),
+      ).toMatch(/on the 11th/);
+    });
+
+    it("mentions nthWeekdayOfMonth ordinals including 'last'", () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new Date('2026-01-01'),
+        nthWeekdayOfMonth: { weekday: 2, nth: 2 },
+      });
+      expect(rule.toHumanText()).toMatch(/on the 2nd Tuesday/);
+
+      const ruleLast = new Quickurrence({
+        rule: 'monthly',
+        startDate: new Date('2026-01-01'),
+        nthWeekdayOfMonth: { weekday: 5, nth: 'last' },
+      });
+      expect(ruleLast.toHumanText()).toMatch(/on the last Friday/);
+    });
+
+    it('mentions weekends preset', () => {
+      const rule = new Quickurrence({
+        startDate: new Date('2026-01-01'),
+        preset: 'weekends',
+      });
+      expect(rule.toHumanText()).toMatch(/weekends only/);
+    });
+
+    it('mentions businessDays preset', () => {
+      const rule = new Quickurrence({
+        startDate: new Date('2026-01-01'),
+        preset: 'businessDays',
+      });
+      expect(rule.toHumanText()).toMatch(/business days only/);
+    });
+
+    it('mentions count terminator', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: new Date('2026-01-01'),
+        count: 5,
+      });
+      expect(rule.toHumanText()).toMatch(/, 5 times/);
+    });
+
+    it('mentions endDate terminator', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: new Date('2026-01-01'),
+        endDate: new Date('2026-12-31'),
+      });
+      expect(rule.toHumanText()).toMatch(/until /);
+    });
+
+    it('static toHumanText delegates through clean()', () => {
+      const text = Quickurrence.toHumanText({
+        rule: 'weekly',
+        startDate: new Date('2026-01-01'),
+        weekDays: [1, 3, 5],
+      });
+      expect(text).toMatch(/Monday/);
+    });
   });
 });

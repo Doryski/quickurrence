@@ -1,6 +1,6 @@
 {
   "name": "quickurrence",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A powerful, type-safe recurrence rule engine for generating recurring dates with timezone support",
   "type": "module",
   "main": "dist/index.cjs",

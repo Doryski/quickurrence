@@ -4,6 +4,24 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import { Command } from "commander";
+
+// `--version`/`-V` is reserved by commander for printing its own version, so
+// we expose the release-target as `--release-version`.
+const program = new Command()
+  .name("release")
+  .description("Bump package.json, tag, and push to trigger the npm release.")
+  .option(
+    "-r, --release-version <ver>",
+    "release version (e.g. 0.3.0 or v0.3.0); defaults to a patch bump of the latest tag",
+  )
+  .option("-y, --yes", "skip the confirmation prompt", false)
+  .option(
+    "-n, --dry-run",
+    "preview the actions without modifying files, committing, tagging, or pushing",
+    false,
+  )
+  .helpOption("-h, --help", "show help");
 
 const root = path.resolve(fileURLToPath(import.meta.url), "../..");
 const PACKAGE_JSON = path.join(root, "package.json");
@@ -71,13 +89,23 @@ const ensureOnDefaultBranch = () => {
   return branch;
 };
 
-const runStep = (label: string, cmd: string, args: string[]) => {
-  console.log(`→ ${label}`);
-  const result = spawnSync(cmd, args, { stdio: "inherit" });
-  if (result.status !== 0) process.exit(result.status ?? 1);
-};
+const makeRunStep =
+  (dryRun: boolean) => (label: string, cmd: string, args: string[]) => {
+    if (dryRun) {
+      console.log(`→ [dry-run] ${label}`);
+      return;
+    }
+    console.log(`→ ${label}`);
+    const result = spawnSync(cmd, args, { stdio: "inherit" });
+    if (result.status !== 0) process.exit(result.status ?? 1);
+  };
+
+type Flags = { releaseVersion?: string; yes: boolean; dryRun: boolean };
 
 const main = async () => {
+  program.parse();
+  const flags = program.opts<Flags>();
+
   ensureCleanTree();
   const branch = ensureOnDefaultBranch();
 
@@ -101,10 +129,38 @@ const main = async () => {
 
   console.log(`Proposed new tag:  ${proposed}\n`);
 
-  const rl = createInterface({ input: stdin, output: stdout });
-  const input = (
-    await rl.question(`Enter version (press Enter to accept ${proposed}): `)
-  ).trim();
+  const interactive = stdin.isTTY === true;
+  const rl = interactive
+    ? createInterface({ input: stdin, output: stdout })
+    : null;
+
+  const askVersion = async () => {
+    if (flags.releaseVersion) {
+      console.log(`Version (from --release-version):  ${flags.releaseVersion}`);
+      return flags.releaseVersion;
+    }
+    if (!rl) return proposed;
+    return (
+      await rl.question(`Enter version (press Enter to accept ${proposed}): `)
+    ).trim();
+  };
+
+  const askConfirm = async () => {
+    if (flags.yes) {
+      console.log(`Proceed? [y/N]  y  (from --yes)`);
+      return true;
+    }
+    if (!rl) {
+      console.error(
+        "\n✗ Non-interactive run: pass --yes to skip the confirmation prompt.",
+      );
+      process.exit(1);
+    }
+    const ans = (await rl.question(`Proceed? [y/N] `)).trim().toLowerCase();
+    return ans === "y" || ans === "yes";
+  };
+
+  const input = await askVersion();
   const chosen = input || proposed;
 
   const normalized = chosen.startsWith("v") ? chosen : `v${chosen}`;
@@ -112,13 +168,13 @@ const main = async () => {
 
   if (!parseSemver(normalized)) {
     console.error(`\n✗ Invalid semver tag: ${normalized}`);
-    rl.close();
+    rl?.close();
     process.exit(1);
   }
 
   if (tags.includes(normalized)) {
     console.error(`\n✗ Tag ${normalized} already exists.`);
-    rl.close();
+    rl?.close();
     process.exit(1);
   }
 
@@ -128,25 +184,32 @@ const main = async () => {
   console.log(`  3. Tag ${normalized} and push ${branch} + tag`);
   console.log(`  4. GitHub Actions will build, test, and publish to npm\n`);
 
-  const confirm = (await rl.question(`Proceed? [y/N] `)).trim().toLowerCase();
-  rl.close();
+  if (flags.dryRun) console.log("Dry-run mode: no changes will be made.\n");
 
-  if (confirm !== "y" && confirm !== "yes") {
+  const confirmed = await askConfirm();
+  rl?.close();
+
+  if (!confirmed) {
     console.log("Aborted.");
     process.exit(0);
   }
 
-  const pkgChanged = await updateVersionFile(PACKAGE_JSON, bareVersion);
+  const runStep = makeRunStep(flags.dryRun);
 
-  if (!pkgChanged) {
-    console.warn("\n⚠ package.json already at target version.");
+  if (flags.dryRun) {
+    console.log(`→ [dry-run] would bump package.json to ${bareVersion}`);
   } else {
-    runStep(`git add package.json`, "git", ["add", "package.json"]);
-    runStep(`git commit -m "release: ${normalized}"`, "git", [
-      "commit",
-      "-m",
-      `release: ${normalized}`,
-    ]);
+    const pkgChanged = await updateVersionFile(PACKAGE_JSON, bareVersion);
+    if (!pkgChanged) {
+      console.warn("\n⚠ package.json already at target version.");
+    } else {
+      runStep(`git add package.json`, "git", ["add", "package.json"]);
+      runStep(`git commit -m "release: ${normalized}"`, "git", [
+        "commit",
+        "-m",
+        `release: ${normalized}`,
+      ]);
+    }
   }
 
   runStep(`git tag ${normalized}`, "git", ["tag", normalized]);
@@ -154,13 +217,28 @@ const main = async () => {
   // Push the commit first so the tag resolves on the remote.
   runStep(`git push origin ${branch}`, "git", ["push", "origin", branch]);
 
-  const pushTag = spawnSync("git", ["push", "origin", normalized], {
-    stdio: "inherit",
-  });
-  if (pushTag.status !== 0) {
-    console.error("\n✗ Tag push failed. Clean up local tag with:");
-    console.error(`  git tag -d ${normalized}`);
-    process.exit(pushTag.status ?? 1);
+  if (!flags.dryRun) {
+    const pushTag = spawnSync("git", ["push", "origin", normalized], {
+      stdio: "inherit",
+    });
+    if (pushTag.status !== 0) {
+      console.error("\n✗ Tag push failed. Clean up local tag with:");
+      console.error(`  git tag -d ${normalized}`);
+      process.exit(pushTag.status ?? 1);
+    }
+  } else {
+    runStep(`git push origin ${normalized}`, "git", [
+      "push",
+      "origin",
+      normalized,
+    ]);
+  }
+
+  if (flags.dryRun) {
+    console.log(
+      `\n✓ Dry-run complete. Re-run without --dry-run to actually release ${normalized}.`,
+    );
+    return;
   }
 
   console.log(

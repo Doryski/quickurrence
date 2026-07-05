@@ -28,7 +28,7 @@ export class QuickurrenceMerge {
       );
     }
 
-    this.rules = [...rules]; // Copy the array
+    this.rules = [...rules];
   }
 
   /**
@@ -37,13 +37,13 @@ export class QuickurrenceMerge {
   getAllOccurrences(range: DateRange): Date[] {
     const allOccurrences: Date[] = [];
 
-    // Get occurrences from all rules
     for (const rule of this.rules) {
       const occurrences = rule.getAllOccurrences(range);
-      allOccurrences.push(...occurrences);
+      for (const occurrence of occurrences) {
+        allOccurrences.push(occurrence);
+      }
     }
 
-    // Sort and deduplicate by timestamp
     const uniqueOccurrences = Array.from(
       new Set(allOccurrences.map((d) => d.getTime())),
     )
@@ -65,27 +65,23 @@ export class QuickurrenceMerge {
       return this.rules[0]?.getAllOccurrences(range) || [];
     }
 
-    // Get occurrences from all rules
     const allRuleOccurrences = this.rules.map((rule) => {
       const occurrences = rule.getAllOccurrences(range);
       return new Set(occurrences.map((d) => d.getTime()));
     });
 
-    // Find intersection of all occurrence sets
     const firstRuleOccurrences = allRuleOccurrences[0];
     if (!firstRuleOccurrences) {
       return [];
     }
+    const otherRuleOccurrences = allRuleOccurrences.slice(1);
     const commonOccurrenceTimestamps = Array.from(firstRuleOccurrences).filter(
-      (timestamp) => {
-        // Check if this timestamp exists in all other rule occurrence sets
-        return allRuleOccurrences
-          .slice(1)
-          .every((ruleOccurrences) => ruleOccurrences.has(timestamp));
-      },
+      (timestamp) =>
+        otherRuleOccurrences.every((ruleOccurrences) =>
+          ruleOccurrences.has(timestamp),
+        ),
     );
 
-    // Convert back to dates and sort
     return commonOccurrenceTimestamps
       .map((time) => new Date(time))
       .sort((a, b) => a.getTime() - b.getTime());
@@ -118,20 +114,21 @@ export class QuickurrenceMerge {
       );
     }
 
-    // Return the earliest next occurrence
-    const sortedOccurrences = nextOccurrences.sort(
-      (a, b) => a.getTime() - b.getTime(),
-    );
-    const earliestOccurrence = sortedOccurrences[0];
+    let earliestOccurrence = nextOccurrences[0];
     if (!earliestOccurrence) {
       throw QuickurrenceError.runtime(
         'No valid next occurrence found',
         QuickurrenceErrorCode.NO_MORE_OCCURRENCES,
         {
           operation: 'getNextOccurrence',
-          details: { sortedOccurrencesLength: sortedOccurrences.length },
+          details: { sortedOccurrencesLength: nextOccurrences.length },
         },
       );
+    }
+    for (const occurrence of nextOccurrences) {
+      if (occurrence.getTime() < earliestOccurrence.getTime()) {
+        earliestOccurrence = occurrence;
+      }
     }
     return earliestOccurrence;
   }
@@ -141,10 +138,7 @@ export class QuickurrenceMerge {
    */
   getStartDate(): Date {
     const startDates = this.rules.map((rule) => rule.getStartDate());
-    const sortedStartDates = startDates.sort(
-      (a, b) => a.getTime() - b.getTime(),
-    );
-    const earliestStartDate = sortedStartDates[0];
+    let earliestStartDate = startDates[0];
     if (!earliestStartDate) {
       throw QuickurrenceError.runtime(
         'No valid start date found',
@@ -154,6 +148,11 @@ export class QuickurrenceMerge {
           details: { mergedRuleCount: this.rules.length },
         },
       );
+    }
+    for (const startDate of startDates) {
+      if (startDate.getTime() < earliestStartDate.getTime()) {
+        earliestStartDate = startDate;
+      }
     }
     return earliestStartDate;
   }
@@ -186,7 +185,16 @@ export class QuickurrenceMerge {
       endDates.push(endDate);
     }
 
-    return endDates.sort((a, b) => b.getTime() - a.getTime())[0];
+    let latestEndDate = endDates[0];
+    if (!latestEndDate) {
+      return undefined;
+    }
+    for (const endDate of endDates) {
+      if (endDate.getTime() > latestEndDate.getTime()) {
+        latestEndDate = endDate;
+      }
+    }
+    return latestEndDate;
   }
 
   /**
@@ -286,7 +294,9 @@ export class QuickurrenceMerge {
     for (const rule of this.rules) {
       const excludeDates = rule.getExcludeDates();
       if (excludeDates && excludeDates.length > 0) {
-        allExcludeDates.push(...excludeDates);
+        for (const excludeDate of excludeDates) {
+          allExcludeDates.push(excludeDate);
+        }
         hasAnyExcludeDates = true;
       }
     }
@@ -295,7 +305,6 @@ export class QuickurrenceMerge {
       return undefined;
     }
 
-    // Deduplicate by timestamp
     const uniqueExcludeDates = Array.from(
       new Set(allExcludeDates.map((d) => d.getTime())),
     ).map((time) => new Date(time));

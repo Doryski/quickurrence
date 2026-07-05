@@ -65,12 +65,10 @@ export type NthWeekdayConfig = z.infer<typeof _nthWeekdayConfigSchema>;
 export type Condition = boolean | ((date: Date) => boolean);
 const ConditionSchema = z.custom<Condition>().refine(
   (val): val is Condition => {
-    // Allow boolean values
     if (typeof val === 'boolean') {
       return true;
     }
 
-    // Check if it's a function
     if (typeof val !== 'function') {
       return false;
     }
@@ -81,7 +79,6 @@ const ConditionSchema = z.custom<Condition>().refine(
       const result = val(testDate);
       return typeof result === 'boolean';
     } catch {
-      // If the function throws or doesn't work properly, it's invalid
       return false;
     }
   },
@@ -117,7 +114,25 @@ export const QuickurrenceOptionsSchema = z.object({
 });
 export type QuickurrenceOptions = z.infer<typeof QuickurrenceOptionsSchema>;
 
+/**
+ * Safety cap on the number of occurrences collected in a single call. Rules
+ * without a count/endDate are effectively infinite, so collection is truncated
+ * at this many matches to bound memory and runtime. Sparse rules (heavy
+ * exclusions or restrictive conditions) are additionally bounded by an
+ * iteration cap so that scanning a range can never loop unbounded.
+ */
 const MAX_NEXT_OCCURENCES = 1000;
+const MAX_COLLECTION_ITERATIONS = 500_000;
+const DAY_MS = 86_400_000;
+const DAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const;
 
 export {
   QuickurrenceError,
@@ -145,6 +160,9 @@ export class Quickurrence {
   private preset?: Preset;
   private timesOfDay?: string[];
   private options: QuickurrenceOptions;
+  private readonly tzContext: ReturnType<typeof tz>;
+  private excludeDateTimes?: Set<number>;
+  private parsedTimesOfDay?: { hh: number; mm: number }[];
 
   /**
    * Create or update Quickurrence options from state
@@ -153,13 +171,12 @@ export class Quickurrence {
     quickurrenceOptions: QuickurrenceOptions,
     updates: Partial<QuickurrenceOptions>,
   ): QuickurrenceOptions | null {
-    // Apply preset configuration if specified in updates
     let baseUpdates: Partial<QuickurrenceOptions>;
     if (updates.preset) {
       const presetOptions = Quickurrence.presetToOptions(updates.preset);
       // Preset defines the core rule pattern, user can only override compatible options
       baseUpdates = {
-        ...updates, // Start with user updates
+        ...updates,
         ...presetOptions, // Preset options override conflicting user updates
       };
     } else {
@@ -172,7 +189,6 @@ export class Quickurrence {
       return null;
     }
 
-    // Clean the options to remove incompatible combinations
     const cleanedOptions = Quickurrence.clean(newOptions);
 
     const timezone = cleanedOptions.timezone ?? 'UTC';
@@ -228,7 +244,6 @@ export class Quickurrence {
       options.timesOfDay = [...cleanedOptions.timesOfDay];
     }
 
-    // Validate the options against the schema
     const validationResult = QuickurrenceOptionsSchema.safeParse(options);
     if (!validationResult.success) {
       console.error(
@@ -244,25 +259,22 @@ export class Quickurrence {
   }
 
   constructor(options: QuickurrenceOptions = {}) {
-    // Apply preset configuration if specified
     let baseOptions: QuickurrenceOptions;
     if (options.preset) {
       const presetOptions = Quickurrence.presetToOptions(options.preset);
       // Preset defines the core rule pattern, user can only override compatible options
       baseOptions = {
-        ...options, // Start with user options
+        ...options,
         ...presetOptions, // Preset options override conflicting user options
       };
     } else {
       baseOptions = { ...options };
     }
 
-    // Set defaults for optional fields
     const timezone = baseOptions.timezone || 'UTC';
     const defaultStartDate =
       baseOptions.startDate || new TZDate(new Date(), timezone);
     const defaultRule = baseOptions.rule || 'daily';
-    // Create options with defaults
     const optionsWithDefaults = {
       ...baseOptions,
       startDate: startOfDay(defaultStartDate, { in: tz(timezone) }),
@@ -270,7 +282,6 @@ export class Quickurrence {
       timezone,
     };
 
-    // Validate all options (including defaults)
     QuickurrenceValidator.validateOptions(optionsWithDefaults);
 
     // Deep copy the original options, handling function conditions specially
@@ -303,7 +314,7 @@ export class Quickurrence {
       weekStartsOn = 1, // Default to Monday (1)
       weekDays,
       monthDay,
-      monthDayMode = 'last', // Default to last
+      monthDayMode = 'last',
       nthWeekdayOfMonth,
       excludeDates,
       condition,
@@ -314,6 +325,7 @@ export class Quickurrence {
     this.startDate = startDate;
     this.rule = rule;
     this.timezone = timezone;
+    this.tzContext = tz(timezone);
     this.interval = interval;
     this.count = count;
     this.weekStartsOn = weekStartsOn;
@@ -322,16 +334,25 @@ export class Quickurrence {
     this.monthDayMode = monthDayMode;
     this.nthWeekdayOfMonth = nthWeekdayOfMonth
       ? { ...nthWeekdayOfMonth }
-      : undefined; // Copy the config
+      : undefined;
     this.timesOfDay = timesOfDay
       ? [...new Set(timesOfDay)].sort()
+      : undefined;
+    this.parsedTimesOfDay = this.timesOfDay
+      ? this.timesOfDay.map((t) => {
+          const [hh, mm] = t.split(':').map(Number);
+          return { hh, mm };
+        })
       : undefined;
     this.excludeDates = excludeDates
       ? excludeDates.map((date) =>
           this.timesOfDay
             ? new Date(date)
-            : startOfDay(date, { in: tz(timezone) }),
+            : startOfDay(date, { in: this.tzContext }),
         )
+      : undefined;
+    this.excludeDateTimes = this.excludeDates
+      ? new Set(this.excludeDates.map((date) => date.getTime()))
       : undefined;
     this.preset = preset;
     this.condition = condition;
@@ -340,7 +361,7 @@ export class Quickurrence {
     if (endDate) {
       this.endDate = this.timesOfDay
         ? new Date(endDate)
-        : startOfDay(endDate, { in: tz(timezone) });
+        : startOfDay(endDate, { in: this.tzContext });
     }
   }
 
@@ -358,31 +379,26 @@ export class Quickurrence {
    * Day-level next-occurrence path (no time-of-day expansion).
    */
   private getNextOccurrenceByDay(after: Date = new Date()): Date {
-    // Special handling for weekly recurrence with weekDays
     if (this.rule === 'weekly' && this.weekDays) {
       return this.getNextWeeklyOccurrenceWithWeekDays(after);
     }
 
-    // Special handling for monthly recurrence with monthDay
     if (this.rule === 'monthly' && this.monthDay !== undefined) {
       return this.getNextMonthlyOccurrenceWithSpecificDay(after);
     }
 
-    // Special handling for monthly recurrence with nthWeekdayOfMonth
     if (this.rule === 'monthly' && this.nthWeekdayOfMonth) {
       return this.getNextMonthlyOccurrenceWithNthWeekday(after);
     }
 
-    const afterNormalized = startOfDay(after, { in: tz(this.timezone) });
+    const afterNormalized = startOfDay(after, { in: this.tzContext });
 
-    // Check count limit by generating all occurrences up to the after date
     if (this.count !== undefined) {
       const allOccurrences = this.getAllOccurrences({
         start: this.startDate,
-        end: addYears(afterNormalized, 10, { in: tz(this.timezone) }), // Look ahead enough to find all count occurrences
+        end: addYears(afterNormalized, 10, { in: this.tzContext }), // Look ahead enough to find all count occurrences
       });
 
-      // Find the next occurrence after the given date
       for (const occurrence of allOccurrences) {
         if (isAfter(occurrence, afterNormalized)) {
           return occurrence;
@@ -399,7 +415,6 @@ export class Quickurrence {
       );
     }
 
-    // If the start date is after the 'after' date and should be included, return the start date
     if (
       isAfter(this.startDate, afterNormalized) &&
       this.shouldIncludeDate(this.startDate)
@@ -407,8 +422,10 @@ export class Quickurrence {
       return this.startDate;
     }
 
-    // Calculate the next occurrence based on the rule
-    let current = new Date(this.startDate);
+    // Calculate the next occurrence based on the rule. Fast-forward close to
+    // `after` first so far-future queries on infinite rules don't step one
+    // interval at a time (and don't spuriously hit the safety cap below).
+    let current = this.fastForwardTowardDay(afterNormalized);
     let attempts = 0;
     const maxAttempts = 1000; // Prevent infinite loops when many dates are excluded
 
@@ -432,7 +449,6 @@ export class Quickurrence {
         );
       }
 
-      // If we've exceeded the end date, throw error
       if (this.endDate && isAfter(current, this.endDate)) {
         throw QuickurrenceError.runtime(
           'No more occurrences within the specified end date',
@@ -445,7 +461,6 @@ export class Quickurrence {
       }
     }
 
-    // Final check: ensure current doesn't exceed end date
     if (this.endDate && isAfter(current, this.endDate)) {
       throw QuickurrenceError.runtime(
         'No more occurrences within the specified end date',
@@ -475,24 +490,21 @@ export class Quickurrence {
    * normalized to startOfDay. Public callers go through getAllOccurrences.
    */
   private collectDayOccurrences(range: DateRange): Date[] {
-    // Special handling for weekly recurrence with weekDays
     if (this.rule === 'weekly' && this.weekDays) {
       return this.getAllWeeklyOccurrencesWithWeekDays(range);
     }
 
-    // Special handling for monthly recurrence with monthDay
     if (this.rule === 'monthly' && this.monthDay !== undefined) {
       return this.getAllMonthlyOccurrencesWithSpecificDay(range);
     }
 
-    // Special handling for monthly recurrence with nthWeekdayOfMonth
     if (this.rule === 'monthly' && this.nthWeekdayOfMonth) {
       return this.getAllMonthlyOccurrencesWithNthWeekday(range);
     }
 
     const occurrences: Date[] = [];
-    const startNormalized = startOfDay(range.start, { in: tz(this.timezone) });
-    const rangeEndNormalized = startOfDay(range.end, { in: tz(this.timezone) });
+    const startNormalized = startOfDay(range.start, { in: this.tzContext });
+    const rangeEndNormalized = startOfDay(range.end, { in: this.tzContext });
 
     // Use the earliest end date: either the range end or the rule's end date
     const effectiveEndDate =
@@ -500,17 +512,15 @@ export class Quickurrence {
         ? this.endDate
         : rangeEndNormalized;
 
-    // Start from the first occurrence that's not before the range start
     let current = this.startDate;
 
-    // If start date is before the range, find the first occurrence in range
     if (isBefore(current, startNormalized)) {
       current = this.getNextOccurrenceByDay(
         new Date(startNormalized.getTime() - 1),
       );
     }
 
-    // Collect all occurrences within the range
+    let iterations = 0;
     while (
       isBefore(current, effectiveEndDate) ||
       isEqual(current, effectiveEndDate)
@@ -519,11 +529,9 @@ export class Quickurrence {
         isAfter(current, startNormalized) ||
         isEqual(current, startNormalized)
       ) {
-        // Check if the occurrence should be included
         if (this.shouldIncludeDate(current)) {
           occurrences.push(new Date(current));
 
-          // Stop if we've reached the count limit
           if (this.count && occurrences.length >= this.count) {
             break;
           }
@@ -532,7 +540,11 @@ export class Quickurrence {
       current = this.getNextDate(current);
 
       // Safety check to prevent infinite loops
-      if (occurrences.length > MAX_NEXT_OCCURENCES) {
+      iterations++;
+      if (
+        occurrences.length > MAX_NEXT_OCCURENCES ||
+        iterations > MAX_COLLECTION_ITERATIONS
+      ) {
         break;
       }
     }
@@ -540,28 +552,20 @@ export class Quickurrence {
     return occurrences;
   }
 
-  /**
-   * Get the start date of this rule
-   */
   getStartDate(): Date {
     return new Date(this.startDate);
   }
 
-  /**
-   * Check if a date is excluded
-   */
   private isDateExcluded(date: Date): boolean {
-    if (!this.excludeDates || this.excludeDates.length === 0) {
+    if (!this.excludeDateTimes || this.excludeDateTimes.size === 0) {
       return false;
     }
 
     // When timesOfDay is set, exclusions match exact datetime; otherwise match day.
     const target = this.timesOfDay
       ? date
-      : startOfDay(date, { in: tz(this.timezone) });
-    return this.excludeDates.some((excludeDate) =>
-      isEqual(excludeDate, target),
-    );
+      : startOfDay(date, { in: this.tzContext });
+    return this.excludeDateTimes.has(target.getTime());
   }
 
   /**
@@ -569,21 +573,18 @@ export class Quickurrence {
    * Returns the input as-is if timesOfDay is not configured.
    */
   private expandDayWithTimes(day: Date): Date[] {
-    if (!this.timesOfDay || this.timesOfDay.length === 0) {
+    if (!this.parsedTimesOfDay || this.parsedTimesOfDay.length === 0) {
       return [day];
     }
-    const dayStart = startOfDay(day, { in: tz(this.timezone) });
-    const opts = { in: tz(this.timezone) } as const;
-    return this.timesOfDay
-      .map((t) => {
-        const [hh, mm] = t.split(':').map(Number);
-        let d = setHours(dayStart, hh, opts);
-        d = setMinutes(d, mm, opts);
-        d = setSeconds(d, 0, opts);
-        d = setMilliseconds(d, 0, opts);
-        return d;
-      })
-      .sort((a, b) => a.getTime() - b.getTime());
+    const dayStart = startOfDay(day, { in: this.tzContext });
+    const opts = { in: this.tzContext } as const;
+    return this.parsedTimesOfDay.map(({ hh, mm }) => {
+      let d = setHours(dayStart, hh, opts);
+      d = setMinutes(d, mm, opts);
+      d = setSeconds(d, 0, opts);
+      d = setMilliseconds(d, 0, opts);
+      return d;
+    });
   }
 
   /**
@@ -592,8 +593,8 @@ export class Quickurrence {
    */
   private getAllOccurrencesWithTimes(range: DateRange): Date[] {
     const dayRange: DateRange = {
-      start: startOfDay(range.start, { in: tz(this.timezone) }),
-      end: startOfDay(range.end, { in: tz(this.timezone) }),
+      start: startOfDay(range.start, { in: this.tzContext }),
+      end: startOfDay(range.end, { in: this.tzContext }),
     };
     const days = this.collectDayOccurrences(dayRange);
     let datetimes = days.flatMap((d) => this.expandDayWithTimes(d));
@@ -626,7 +627,7 @@ export class Quickurrence {
       : this.startDate;
     const range: DateRange = {
       start: this.startDate,
-      end: addYears(windowStartReference, 10, { in: tz(this.timezone) }),
+      end: addYears(windowStartReference, 10, { in: this.tzContext }),
     };
     const all = this.getAllOccurrencesWithTimes(range);
     for (const occ of all) {
@@ -654,9 +655,6 @@ export class Quickurrence {
     );
   }
 
-  /**
-   * Check if a date meets the condition
-   */
   private meetsCondition(date: Date): boolean {
     if (this.condition === undefined) {
       return true;
@@ -667,7 +665,7 @@ export class Quickurrence {
     }
 
     // Normalize the date to start of day in the specified timezone before passing to condition function
-    const normalizedDate = startOfDay(date, { in: tz(this.timezone) });
+    const normalizedDate = startOfDay(date, { in: this.tzContext });
     return this.condition(normalizedDate);
   }
 
@@ -678,16 +676,10 @@ export class Quickurrence {
     return !this.isDateExcluded(date) && this.meetsCondition(date);
   }
 
-  /**
-   * Get the recurrence rule
-   */
   getRule(): RecurrenceRule {
     return this.rule;
   }
 
-  /**
-   * Get the end date of this rule (if set)
-   */
   getEndDate(): Date | undefined {
     return this.endDate ? new Date(this.endDate) : undefined;
   }
@@ -699,74 +691,44 @@ export class Quickurrence {
     return structuredClone(this.options);
   }
 
-  /**
-   * Get the week starts on setting
-   */
   getWeekStartsOn(): WeekStartsOn {
     return this.weekStartsOn;
   }
 
-  /**
-   * Get the weekDays setting for weekly recurrence
-   */
   getWeekDays(): WeekDay[] | undefined {
     return this.weekDays ? [...this.weekDays] : undefined;
   }
 
-  /**
-   * Get the monthDay setting for monthly recurrence
-   */
   getMonthDay(): MonthDay | undefined {
     return this.monthDay;
   }
 
-  /**
-   * Get the monthDayMode setting for monthly recurrence
-   */
   getMonthDayMode(): MonthDayMode {
     return this.monthDayMode;
   }
 
-  /**
-   * Get the nthWeekdayOfMonth setting for monthly recurrence
-   */
   getNthWeekdayOfMonth(): NthWeekdayConfig | undefined {
     return this.nthWeekdayOfMonth ? { ...this.nthWeekdayOfMonth } : undefined;
   }
 
-  /**
-   * Get the count setting for recurrence
-   */
   getCount(): number | undefined {
     return this.count;
   }
 
-  /**
-   * Get the excludeDates setting for recurrence
-   */
   getExcludeDates(): Date[] | undefined {
     return this.excludeDates
       ? this.excludeDates.map((date) => new Date(date))
       : undefined;
   }
 
-  /**
-   * Get the condition setting for recurrence
-   */
   getCondition(): boolean | ((date: Date) => boolean) | undefined {
     return this.condition;
   }
 
-  /**
-   * Get the preset setting for recurrence
-   */
   getPreset(): Preset | undefined {
     return this.preset;
   }
 
-  /**
-   * Get the timesOfDay setting for recurrence
-   */
   getTimesOfDay(): string[] | undefined {
     return this.timesOfDay ? [...this.timesOfDay] : undefined;
   }
@@ -815,12 +777,10 @@ export class Quickurrence {
       return cleaned;
     }
 
-    // Clean weekly-only options for non-weekly rules
     if (cleaned.rule !== 'weekly') {
       delete cleaned.weekDays;
     }
 
-    // Clean monthly-only options for non-monthly rules
     if (cleaned.rule !== 'monthly') {
       delete cleaned.monthDay;
       delete cleaned.monthDayMode;
@@ -846,7 +806,6 @@ export class Quickurrence {
       delete cleaned.nthWeekdayOfMonth;
     }
 
-    // Clean empty arrays
     if (cleaned.weekDays && cleaned.weekDays.length === 0) {
       delete cleaned.weekDays;
     }
@@ -859,7 +818,6 @@ export class Quickurrence {
       delete cleaned.timesOfDay;
     }
 
-    // Remove default values to keep options clean
     if (cleaned.interval === 1) {
       delete cleaned.interval;
     }
@@ -876,13 +834,11 @@ export class Quickurrence {
     if (options.rule === 'weekly' && options.weekDays) {
       const weekDays = [...options.weekDays].sort();
 
-      // Check if it matches business days (Monday-Friday)
       const businessDays = [1, 2, 3, 4, 5];
       if (this.areArraysEqual(weekDays, businessDays)) {
         return 'businessDays';
       }
 
-      // Check if it matches weekends (Saturday-Sunday)
       const weekendDays = [0, 6];
       if (this.areArraysEqual(weekDays, weekendDays)) {
         return 'weekends';
@@ -890,6 +846,53 @@ export class Quickurrence {
     }
 
     return undefined;
+  }
+
+  /**
+   * Advance the start date by `k` rule intervals in one arithmetic step.
+   * Only sound for rules with associative period arithmetic (daily/weekly),
+   * which is where fast-forwarding is applied.
+   */
+  private advanceGrid(k: number): Date {
+    const steps = k * this.interval;
+    const opts = { in: this.tzContext } as const;
+    switch (this.rule) {
+      case 'weekly':
+        return startOfDay(addWeeks(this.startDate, steps, opts), opts);
+      default:
+        return startOfDay(addDays(this.startDate, steps, opts), opts);
+    }
+  }
+
+  /**
+   * Jump from the start date to the last grid occurrence at or before
+   * `afterNormalized`, so the caller only needs a few steps to reach the
+   * first occurrence after it. Returns the start date when no safe jump
+   * applies (monthly/yearly, where day/leap clamping makes multiplication
+   * differ from iteration).
+   */
+  private fastForwardTowardDay(afterNormalized: Date): Date {
+    const startMs = this.startDate.getTime();
+    const afterMs = afterNormalized.getTime();
+    if (afterMs <= startMs) {
+      return new Date(this.startDate);
+    }
+    if (this.rule !== 'daily' && this.rule !== 'weekly') {
+      return new Date(this.startDate);
+    }
+
+    const periodDays = this.rule === 'weekly' ? 7 : 1;
+    let k = Math.floor((afterMs - startMs) / (this.interval * periodDays * DAY_MS));
+    if (k <= 0) {
+      return new Date(this.startDate);
+    }
+
+    let candidate = this.advanceGrid(k);
+    while (k > 0 && isAfter(candidate, afterNormalized)) {
+      k--;
+      candidate = this.advanceGrid(k);
+    }
+    return candidate;
   }
 
   private getNextDate(current: Date): Date {
@@ -914,15 +917,15 @@ export class Quickurrence {
     }
 
     // Normalize to start of day in the specified timezone
-    return startOfDay(nextDate, { in: tz(this.timezone) });
+    return startOfDay(nextDate, { in: this.tzContext });
   }
 
   private getNextDaily(current: Date): Date {
-    return addDays(current, this.interval, { in: tz(this.timezone) });
+    return addDays(current, this.interval, { in: this.tzContext });
   }
 
   private getDay(date: Date): Day {
-    return getDay(date, { in: tz(this.timezone) }) as Day;
+    return getDay(date, { in: this.tzContext }) as Day;
   }
 
   private static areArraysEqual<T>(array1: T[], array2: T[]): boolean {
@@ -934,11 +937,9 @@ export class Quickurrence {
 
   private getNextWeekly(current: Date): Date {
     if (!this.weekDays) {
-      // Traditional weekly recurrence: simply add weeks to the current date
-      return addWeeks(current, this.interval, { in: tz(this.timezone) });
+      return addWeeks(current, this.interval, { in: this.tzContext });
     }
 
-    // When weekDays is specified, find the next occurrence on any of the specified days
     const currentWeekday = this.getDay(current);
     const currentWeekdayIndex = this.weekDays.indexOf(currentWeekday);
 
@@ -947,18 +948,16 @@ export class Quickurrence {
       currentWeekdayIndex >= 0 &&
       currentWeekdayIndex < this.weekDays.length - 1
     ) {
-      // Find the next weekday in the same week
       const nextWeekday = this.weekDays[currentWeekdayIndex + 1];
       QuickurrenceValidator.validateWeekdayValue(nextWeekday);
       return this.getNextWeekdayOccurrence(
-        addDays(current, 1, { in: tz(this.timezone) }),
+        addDays(current, 1, { in: this.tzContext }),
         nextWeekday,
       );
     }
 
-    // Move to the next interval week and find the first specified weekday
     const nextWeekStart = addWeeks(current, this.interval, {
-      in: tz(this.timezone),
+      in: this.tzContext,
     });
     const firstWeekday = this.weekDays[0];
     QuickurrenceValidator.validateWeekdayValue(firstWeekday);
@@ -972,22 +971,18 @@ export class Quickurrence {
     if (this.nthWeekdayOfMonth) {
       return this.getNextMonthlyWithNthWeekday(current);
     }
-    return addMonths(current, this.interval, { in: tz(this.timezone) });
+    return addMonths(current, this.interval, { in: this.tzContext });
   }
 
   private getNextYearly(current: Date): Date {
-    return addYears(current, this.interval, { in: tz(this.timezone) });
+    return addYears(current, this.interval, { in: this.tzContext });
   }
 
-  /**
-   * Get the next monthly occurrence with a specific day of the month
-   */
   private getNextMonthlyWithSpecificDay(current: Date): Date {
     const targetDay = this.monthDay!; // Direct use of 1-31
     const currentMonth = new Date(current);
-    const normalizedCurrent = startOfDay(current, { in: tz(this.timezone) });
+    const normalizedCurrent = startOfDay(current, { in: this.tzContext });
 
-    // First, try to find the target day in the current month if it's after the current date
     let normalizedTargetThisMonth: Date;
     if (this.timezone === 'UTC') {
       normalizedTargetThisMonth = new Date(
@@ -1004,32 +999,30 @@ export class Quickurrence {
         targetDay,
       );
       normalizedTargetThisMonth = startOfDay(targetDateThisMonth, {
-        in: tz(this.timezone),
+        in: this.tzContext,
       });
     }
 
     // If the target day exists in the current month and is STRICTLY after the current date, use it
     if (
-      targetDay <= getDaysInMonth(currentMonth, { in: tz(this.timezone) }) &&
+      targetDay <= getDaysInMonth(currentMonth, { in: this.tzContext }) &&
       isAfter(normalizedTargetThisMonth, normalizedCurrent)
     ) {
       return normalizedTargetThisMonth;
     }
 
     // Otherwise, find next month with target day (always move forward)
-    // Start from the next interval month
     let nextMonth = addMonths(currentMonth, this.interval, {
-      in: tz(this.timezone),
+      in: this.tzContext,
     });
     let attempts = 0;
     const maxAttempts = 12; // Prevent infinite loops
 
     while (attempts < maxAttempts) {
       const daysInTargetMonth = getDaysInMonth(nextMonth, {
-        in: tz(this.timezone),
+        in: this.tzContext,
       });
 
-      // If the target day exists in this month, use it
       if (targetDay <= daysInTargetMonth) {
         if (this.timezone === 'UTC') {
           return new Date(
@@ -1041,20 +1034,17 @@ export class Quickurrence {
             nextMonth.getMonth(),
             targetDay,
           );
-          return startOfDay(targetDate, { in: tz(this.timezone) });
+          return startOfDay(targetDate, { in: this.tzContext });
         }
       }
 
-      // Handle the case where target day doesn't exist
       if (this.monthDayMode === 'last') {
-        // Use the last day of the month
-        const lastDay = lastDayOfMonth(nextMonth, { in: tz(this.timezone) });
-        return startOfDay(lastDay, { in: tz(this.timezone) });
+        const lastDay = lastDayOfMonth(nextMonth, { in: this.tzContext });
+        return startOfDay(lastDay, { in: this.tzContext });
       }
 
-      // Skip mode: move to next month
       nextMonth = addMonths(nextMonth, this.interval, {
-        in: tz(this.timezone),
+        in: this.tzContext,
       });
       attempts++;
     }
@@ -1069,10 +1059,10 @@ export class Quickurrence {
     );
   }
 
-  /**
-   * Get all monthly occurrences with specific day within the given date range
-   */
-  private getAllMonthlyOccurrencesWithSpecificDay(range: DateRange): Date[] {
+  private getAllMonthlyOccurrencesWithSpecificDay(
+    range: DateRange,
+    stopAfter?: Date,
+  ): Date[] {
     if (this.monthDay === undefined) {
       throw QuickurrenceError.unsupportedOperation(
         'monthDay must be specified for this method',
@@ -1086,8 +1076,8 @@ export class Quickurrence {
     }
 
     const occurrences: Date[] = [];
-    const startNormalized = startOfDay(range.start, { in: tz(this.timezone) });
-    const rangeEndNormalized = startOfDay(range.end, { in: tz(this.timezone) });
+    const startNormalized = startOfDay(range.start, { in: this.tzContext });
+    const rangeEndNormalized = startOfDay(range.end, { in: this.tzContext });
 
     // Use the earliest end date: either the range end or the rule's end date
     const effectiveEndDate =
@@ -1095,13 +1085,10 @@ export class Quickurrence {
         ? this.endDate
         : rangeEndNormalized;
 
-    // Start from the rule's start date month
     let monthCounter = 0;
     let currentMonthStart = new Date(this.startDate);
 
-    // Generate occurrences month by month with proper intervals
     while (currentMonthStart <= effectiveEndDate) {
-      // Get the target day occurrence in this month
       const monthOccurrence = this.getMonthDayOccurrence(currentMonthStart);
 
       if (monthOccurrence) {
@@ -1116,19 +1103,22 @@ export class Quickurrence {
         if (shouldInclude && this.shouldIncludeDate(monthOccurrence)) {
           occurrences.push(new Date(monthOccurrence));
 
-          // Stop if we've reached the count limit
+          // Short-circuit once we've passed the caller's target
+          if (stopAfter && isAfter(monthOccurrence, stopAfter)) {
+            break;
+          }
+
           if (this.count && occurrences.length >= this.count) {
             break;
           }
         }
       }
 
-      // Move to the next interval month
       monthCounter++;
       currentMonthStart = addMonths(
         this.startDate,
         monthCounter * this.interval,
-        { in: tz(this.timezone) },
+        { in: this.tzContext },
       );
 
       // Safety check to prevent infinite loops
@@ -1145,41 +1135,32 @@ export class Quickurrence {
    */
   private getMonthDayOccurrence(monthDate: Date): Date | null {
     const targetDay = this.monthDay!; // Direct use of 1-31
-    const daysInMonth = getDaysInMonth(monthDate, { in: tz(this.timezone) });
+    const daysInMonth = getDaysInMonth(monthDate, { in: this.tzContext });
 
-    // If the target day exists in this month, use it
     if (targetDay <= daysInMonth) {
       // Create date in the same timezone as the input monthDate
       if (this.timezone === 'UTC') {
-        // For UTC, create date directly
         return new Date(
           Date.UTC(monthDate.getFullYear(), monthDate.getMonth(), targetDay),
         );
       } else {
-        // For other timezones, use startOfDay with timezone
         const targetDate = new Date(
           monthDate.getFullYear(),
           monthDate.getMonth(),
           targetDay,
         );
-        return startOfDay(targetDate, { in: tz(this.timezone) });
+        return startOfDay(targetDate, { in: this.tzContext });
       }
     }
 
-    // Handle the case where target day doesn't exist
     if (this.monthDayMode === 'last') {
-      // Use the last day of the month
-      const lastDay = lastDayOfMonth(monthDate, { in: tz(this.timezone) });
-      return startOfDay(lastDay, { in: tz(this.timezone) });
+      const lastDay = lastDayOfMonth(monthDate, { in: this.tzContext });
+      return startOfDay(lastDay, { in: this.tzContext });
     }
 
-    // Skip mode: return null to skip this month
     return null;
   }
 
-  /**
-   * Get the next monthly occurrence with specific day after the given date
-   */
   private getNextMonthlyOccurrenceWithSpecificDay(after: Date): Date {
     if (this.monthDay === undefined) {
       throw QuickurrenceError.unsupportedOperation(
@@ -1193,16 +1174,17 @@ export class Quickurrence {
       );
     }
 
-    const afterNormalized = startOfDay(after, { in: tz(this.timezone) });
+    const afterNormalized = startOfDay(after, { in: this.tzContext });
 
-    // Check count limit by generating all occurrences up to the after date
     if (this.count !== undefined) {
-      const allOccurrences = this.getAllMonthlyOccurrencesWithSpecificDay({
-        start: this.startDate,
-        end: addMonths(afterNormalized, 200, { in: tz(this.timezone) }), // Look ahead enough to find all count occurrences
-      });
+      const allOccurrences = this.getAllMonthlyOccurrencesWithSpecificDay(
+        {
+          start: this.startDate,
+          end: addMonths(afterNormalized, 200, { in: this.tzContext }), // Look ahead enough to find all count occurrences
+        },
+        afterNormalized,
+      );
 
-      // Find the next occurrence after the given date
       for (const occurrence of allOccurrences) {
         if (isAfter(occurrence, afterNormalized)) {
           return occurrence;
@@ -1219,7 +1201,6 @@ export class Quickurrence {
       );
     }
 
-    // If the start date is after the 'after' date, check if it matches our monthDay
     if (isAfter(this.startDate, afterNormalized)) {
       const startOccurrence = this.getMonthDayOccurrence(this.startDate);
       if (
@@ -1230,15 +1211,16 @@ export class Quickurrence {
       }
     }
 
-    // Generate all monthly occurrences in a reasonable range and find the next one
     const range = {
       start: afterNormalized,
-      end: addMonths(afterNormalized, 100, { in: tz(this.timezone) }), // Look ahead 100 months to find next occurrence
+      end: addMonths(afterNormalized, 100, { in: this.tzContext }), // Look ahead 100 months to find next occurrence
     };
 
-    const allOccurrences = this.getAllMonthlyOccurrencesWithSpecificDay(range);
+    const allOccurrences = this.getAllMonthlyOccurrencesWithSpecificDay(
+      range,
+      afterNormalized,
+    );
 
-    // Find the first occurrence after the 'after' date
     for (const occurrence of allOccurrences) {
       if (isAfter(occurrence, afterNormalized)) {
         return occurrence;
@@ -1265,7 +1247,7 @@ export class Quickurrence {
       return date;
     }
 
-    return nextDay(date, targetWeekday, { in: tz(this.timezone) });
+    return nextDay(date, targetWeekday, { in: this.tzContext });
   }
 
   /**
@@ -1274,10 +1256,7 @@ export class Quickurrence {
   private getWeekdaysInWeek(weekStartDate: Date, weekdays: WeekDay[]): Date[] {
     const occurrences: Date[] = [];
 
-    // For each target weekday, calculate its date in this week
     for (const targetWeekday of weekdays) {
-      // Calculate days to add to get to the target weekday
-      // weekStartDate is the reference point for this week
       const weekStartDay = this.getDay(weekStartDate);
       let daysToAdd = targetWeekday - weekStartDay;
 
@@ -1287,18 +1266,18 @@ export class Quickurrence {
       }
 
       const targetDate = addDays(weekStartDate, daysToAdd, {
-        in: tz(this.timezone),
+        in: this.tzContext,
       });
-      occurrences.push(startOfDay(targetDate, { in: tz(this.timezone) }));
+      occurrences.push(startOfDay(targetDate, { in: this.tzContext }));
     }
 
     return occurrences.sort((a, b) => a.getTime() - b.getTime());
   }
 
-  /**
-   * Get all weekly occurrences with specific weekdays within the given date range
-   */
-  private getAllWeeklyOccurrencesWithWeekDays(range: DateRange): Date[] {
+  private getAllWeeklyOccurrencesWithWeekDays(
+    range: DateRange,
+    stopAfter?: Date,
+  ): Date[] {
     if (!this.weekDays) {
       throw QuickurrenceError.unsupportedOperation(
         'weekDays must be specified for this method',
@@ -1312,8 +1291,8 @@ export class Quickurrence {
     }
 
     const occurrences: Date[] = [];
-    const startNormalized = startOfDay(range.start, { in: tz(this.timezone) });
-    const rangeEndNormalized = startOfDay(range.end, { in: tz(this.timezone) });
+    const startNormalized = startOfDay(range.start, { in: this.tzContext });
+    const rangeEndNormalized = startOfDay(range.end, { in: this.tzContext });
 
     // Use the earliest end date: either the range end or the rule's end date
     const effectiveEndDate =
@@ -1324,20 +1303,17 @@ export class Quickurrence {
     // Start from the aligned week that contains the rule's start date
     const baseWeekStart = startOfWeek(this.startDate, {
       weekStartsOn: this.weekStartsOn,
-      in: tz(this.timezone),
+      in: this.tzContext,
     });
     let weekCounter = 0;
     let currentWeekStart = baseWeekStart;
 
-    // Generate occurrences week by week with proper intervals
     while (currentWeekStart <= effectiveEndDate) {
-      // Get all weekday occurrences in this week
       const weekOccurrences = this.getWeekdaysInWeek(
         currentWeekStart,
         this.weekDays,
       );
 
-      // Filter occurrences to only include those within the range and constraints
       for (const occurrence of weekOccurrences) {
         const shouldInclude =
           (isAfter(occurrence, startNormalized) ||
@@ -1350,22 +1326,33 @@ export class Quickurrence {
         if (shouldInclude && this.shouldIncludeDate(occurrence)) {
           occurrences.push(new Date(occurrence));
 
-          // Stop if we've reached the count limit
+          // Short-circuit once we've passed the caller's target
+          if (stopAfter && isAfter(occurrence, stopAfter)) {
+            break;
+          }
+
           if (this.count && occurrences.length >= this.count) {
             break;
           }
         }
       }
 
-      // Stop if we've reached the count limit (break out of outer loop too)
+      // Short-circuit once we've passed the caller's target (outer loop)
+      if (
+        stopAfter &&
+        occurrences.length > 0 &&
+        isAfter(occurrences[occurrences.length - 1], stopAfter)
+      ) {
+        break;
+      }
+
       if (this.count && occurrences.length >= this.count) {
         break;
       }
 
-      // Move to the next interval week
       weekCounter++;
       currentWeekStart = addWeeks(baseWeekStart, weekCounter * this.interval, {
-        in: tz(this.timezone),
+        in: this.tzContext,
       });
 
       // Safety check to prevent infinite loops
@@ -1377,9 +1364,6 @@ export class Quickurrence {
     return occurrences.sort((a, b) => a.getTime() - b.getTime());
   }
 
-  /**
-   * Get the next weekly occurrence with specific weekdays after the given date
-   */
   private getNextWeeklyOccurrenceWithWeekDays(after: Date): Date {
     if (!this.weekDays) {
       throw QuickurrenceError.unsupportedOperation(
@@ -1393,14 +1377,15 @@ export class Quickurrence {
       );
     }
 
-    const afterNormalized = startOfDay(after, { in: tz(this.timezone) });
-    // Check count limit by generating all occurrences up to the after date
+    const afterNormalized = startOfDay(after, { in: this.tzContext });
     if (this.count !== undefined) {
-      const allOccurrences = this.getAllWeeklyOccurrencesWithWeekDays({
-        start: this.startDate,
-        end: addWeeks(afterNormalized, 200, { in: tz(this.timezone) }), // Look ahead enough to find all count occurrences
-      });
-      // Find the next occurrence after the given date
+      const allOccurrences = this.getAllWeeklyOccurrencesWithWeekDays(
+        {
+          start: this.startDate,
+          end: addWeeks(afterNormalized, 200, { in: this.tzContext }), // Look ahead enough to find all count occurrences
+        },
+        afterNormalized,
+      );
       for (const occurrence of allOccurrences) {
         if (isAfter(occurrence, afterNormalized)) {
           return occurrence;
@@ -1417,20 +1402,20 @@ export class Quickurrence {
       );
     }
 
-    // If the start date is after the 'after' date, check if it matches any of our weekdays
     if (isAfter(this.startDate, afterNormalized)) {
       const startWeekday = this.getDay(this.startDate);
       if (this.weekDays.includes(startWeekday)) {
         return this.startDate;
       }
     }
-    // Generate all weekly occurrences in a reasonable range and find the next one
     const range = {
       start: afterNormalized,
-      end: addWeeks(afterNormalized, 100, { in: tz(this.timezone) }), // Look ahead 100 weeks to find next occurrence
+      end: addWeeks(afterNormalized, 100, { in: this.tzContext }), // Look ahead 100 weeks to find next occurrence
     };
-    const allOccurrences = this.getAllWeeklyOccurrencesWithWeekDays(range);
-    // Find the first occurrence after the 'after' date
+    const allOccurrences = this.getAllWeeklyOccurrencesWithWeekDays(
+      range,
+      afterNormalized,
+    );
     for (const occurrence of allOccurrences) {
       if (isAfter(occurrence, afterNormalized)) {
         return occurrence;
@@ -1447,9 +1432,6 @@ export class Quickurrence {
     );
   }
 
-  /**
-   * Calculate the nth occurrence of a specific weekday in a month
-   */
   private getNthWeekdayInMonth(
     monthDate: Date,
     weekday: WeekDay,
@@ -1457,47 +1439,33 @@ export class Quickurrence {
   ): Date | null {
     const year = monthDate.getFullYear();
     const month = monthDate.getMonth();
-
-    // Handle 'last' case
-    if (nth === 'last') {
-      // Start from the last day of the month and work backward
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      for (let day = daysInMonth; day >= 1; day--) {
-        const testDate =
-          this.timezone === 'UTC'
-            ? new Date(Date.UTC(year, month, day))
-            : new Date(year, month, day);
-        if (this.getDay(testDate) === weekday) {
-          return startOfDay(testDate, { in: tz(this.timezone) });
-        }
-      }
-      return null;
-    }
-
-    // Handle 1st, 2nd, 3rd, 4th cases
-    let count = 0;
     const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const buildDate = (day: number) =>
+      this.timezone === 'UTC'
+        ? new Date(Date.UTC(year, month, day))
+        : new Date(year, month, day);
 
-    for (let day = 1; day <= daysInMonth; day++) {
-      const testDate =
-        this.timezone === 'UTC'
-          ? new Date(Date.UTC(year, month, day))
-          : new Date(year, month, day);
-      if (this.getDay(testDate) === weekday) {
-        count++;
-        if (count === nth) {
-          return startOfDay(testDate, { in: tz(this.timezone) });
-        }
-      }
+    // Handle 'last' case: step back from the last matching weekday of the month
+    if (nth === 'last') {
+      const lastWeekday = this.getDay(buildDate(daysInMonth));
+      const targetDay = daysInMonth - ((lastWeekday - weekday + 7) % 7);
+      return startOfDay(buildDate(targetDay), { in: this.tzContext });
     }
 
-    return null; // nth occurrence doesn't exist in this month
+    // Handle 1st, 2nd, 3rd, 4th cases via arithmetic from the first day
+    const firstWeekday = this.getDay(buildDate(1));
+    const firstOccurrenceDay = 1 + ((weekday - firstWeekday + 7) % 7);
+    const targetDay = firstOccurrenceDay + 7 * (nth - 1);
+    if (targetDay > daysInMonth) {
+      return null; // nth occurrence doesn't exist in this month
+    }
+    return startOfDay(buildDate(targetDay), { in: this.tzContext });
   }
 
-  /**
-   * Get all monthly occurrences with nth weekday within the given date range
-   */
-  private getAllMonthlyOccurrencesWithNthWeekday(range: DateRange): Date[] {
+  private getAllMonthlyOccurrencesWithNthWeekday(
+    range: DateRange,
+    stopAfter?: Date,
+  ): Date[] {
     if (!this.nthWeekdayOfMonth) {
       throw QuickurrenceError.unsupportedOperation(
         'nthWeekdayOfMonth must be specified for this method',
@@ -1511,8 +1479,8 @@ export class Quickurrence {
     }
 
     const occurrences: Date[] = [];
-    const startNormalized = startOfDay(range.start, { in: tz(this.timezone) });
-    const rangeEndNormalized = startOfDay(range.end, { in: tz(this.timezone) });
+    const startNormalized = startOfDay(range.start, { in: this.tzContext });
+    const rangeEndNormalized = startOfDay(range.end, { in: this.tzContext });
 
     // Use the earliest end date: either the range end or the rule's end date
     const effectiveEndDate =
@@ -1520,13 +1488,10 @@ export class Quickurrence {
         ? this.endDate
         : rangeEndNormalized;
 
-    // Start from the rule's start date month
     let monthCounter = 0;
     let currentMonthStart = new Date(this.startDate);
 
-    // Generate occurrences month by month with proper intervals
     while (currentMonthStart <= effectiveEndDate) {
-      // Get the nth weekday occurrence in this month
       const monthOccurrence = this.getNthWeekdayInMonth(
         currentMonthStart,
         this.nthWeekdayOfMonth.weekday,
@@ -1545,19 +1510,22 @@ export class Quickurrence {
         if (shouldInclude && this.shouldIncludeDate(monthOccurrence)) {
           occurrences.push(new Date(monthOccurrence));
 
-          // Stop if we've reached the count limit
+          // Short-circuit once we've passed the caller's target
+          if (stopAfter && isAfter(monthOccurrence, stopAfter)) {
+            break;
+          }
+
           if (this.count && occurrences.length >= this.count) {
             break;
           }
         }
       }
 
-      // Move to the next interval month
       monthCounter++;
       currentMonthStart = addMonths(
         this.startDate,
         monthCounter * this.interval,
-        { in: tz(this.timezone) },
+        { in: this.tzContext },
       );
 
       // Safety check to prevent infinite loops
@@ -1569,9 +1537,6 @@ export class Quickurrence {
     return occurrences.sort((a, b) => a.getTime() - b.getTime());
   }
 
-  /**
-   * Get the next monthly occurrence with nth weekday after the given date
-   */
   private getNextMonthlyOccurrenceWithNthWeekday(after: Date): Date {
     if (!this.nthWeekdayOfMonth) {
       throw QuickurrenceError.unsupportedOperation(
@@ -1585,16 +1550,17 @@ export class Quickurrence {
       );
     }
 
-    const afterNormalized = startOfDay(after, { in: tz(this.timezone) });
+    const afterNormalized = startOfDay(after, { in: this.tzContext });
 
-    // Check count limit by generating all occurrences up to the after date
     if (this.count !== undefined) {
-      const allOccurrences = this.getAllMonthlyOccurrencesWithNthWeekday({
-        start: this.startDate,
-        end: addMonths(afterNormalized, 200, { in: tz(this.timezone) }), // Look ahead enough to find all count occurrences
-      });
+      const allOccurrences = this.getAllMonthlyOccurrencesWithNthWeekday(
+        {
+          start: this.startDate,
+          end: addMonths(afterNormalized, 200, { in: this.tzContext }), // Look ahead enough to find all count occurrences
+        },
+        afterNormalized,
+      );
 
-      // Find the next occurrence after the given date
       for (const occurrence of allOccurrences) {
         if (isAfter(occurrence, afterNormalized)) {
           return occurrence;
@@ -1611,7 +1577,6 @@ export class Quickurrence {
       );
     }
 
-    // If the start date is after the 'after' date, check if it matches our nth weekday
     if (isAfter(this.startDate, afterNormalized)) {
       const startOccurrence = this.getNthWeekdayInMonth(
         this.startDate,
@@ -1626,15 +1591,16 @@ export class Quickurrence {
       }
     }
 
-    // Generate all monthly occurrences in a reasonable range and find the next one
     const range = {
       start: afterNormalized,
-      end: addMonths(afterNormalized, 100, { in: tz(this.timezone) }), // Look ahead 100 months to find next occurrence
+      end: addMonths(afterNormalized, 100, { in: this.tzContext }), // Look ahead 100 months to find next occurrence
     };
 
-    const allOccurrences = this.getAllMonthlyOccurrencesWithNthWeekday(range);
+    const allOccurrences = this.getAllMonthlyOccurrencesWithNthWeekday(
+      range,
+      afterNormalized,
+    );
 
-    // Find the first occurrence after the 'after' date
     for (const occurrence of allOccurrences) {
       if (isAfter(occurrence, afterNormalized)) {
         return occurrence;
@@ -1657,9 +1623,8 @@ export class Quickurrence {
   private getNextMonthlyWithNthWeekday(current: Date): Date {
     const { weekday, nth } = this.nthWeekdayOfMonth!;
     const currentMonth = new Date(current);
-    const normalizedCurrent = startOfDay(current, { in: tz(this.timezone) });
+    const normalizedCurrent = startOfDay(current, { in: this.tzContext });
 
-    // First, try to find the nth weekday in the current month if it's after the current date
     const targetThisMonth = this.getNthWeekdayInMonth(
       currentMonth,
       weekday,
@@ -1672,9 +1637,8 @@ export class Quickurrence {
     }
 
     // Otherwise, find next month with nth weekday (always move forward)
-    // Start from the next interval month
     let nextMonth = addMonths(currentMonth, this.interval, {
-      in: tz(this.timezone),
+      in: this.tzContext,
     });
     let attempts = 0;
     const maxAttempts = 12; // Prevent infinite loops
@@ -1690,9 +1654,8 @@ export class Quickurrence {
         return targetNextMonth;
       }
 
-      // Move to next interval month
       nextMonth = addMonths(nextMonth, this.interval, {
-        in: tz(this.timezone),
+        in: this.tzContext,
       });
       attempts++;
     }
@@ -1714,29 +1677,17 @@ export class Quickurrence {
     try {
       let text = '';
 
-      // Build frequency text
       if (this.interval === 1) {
         text = Quickurrence.capitalize(this.rule);
       } else {
         text = `Every ${this.interval} ${this.rule === 'daily' ? 'days' : this.rule === 'weekly' ? 'weeks' : this.rule === 'monthly' ? 'months' : 'years'}`;
       }
 
-      // Add specific day information
       if (this.rule === 'weekly' && this.weekDays && this.weekDays.length > 0) {
-        const dayNames = [
-          'Sunday',
-          'Monday',
-          'Tuesday',
-          'Wednesday',
-          'Thursday',
-          'Friday',
-          'Saturday',
-        ];
-        // Sort weekdays for display with Saturday before Sunday
         const sortedWeekDays = Quickurrence.sortWeekDaysForDisplay(
           this.weekDays,
         );
-        const dayLabels = sortedWeekDays.map((day) => dayNames[day]).join(', ');
+        const dayLabels = sortedWeekDays.map((day) => DAY_NAMES[day]).join(', ');
         text += ` on ${dayLabels}`;
       }
 
@@ -1745,37 +1696,25 @@ export class Quickurrence {
       }
 
       if (this.rule === 'monthly' && this.nthWeekdayOfMonth) {
-        const dayNames = [
-          'Sunday',
-          'Monday',
-          'Tuesday',
-          'Wednesday',
-          'Thursday',
-          'Friday',
-          'Saturday',
-        ];
         const nthText =
           this.nthWeekdayOfMonth.nth === 'last'
             ? 'last'
             : Quickurrence.getOrdinalNumber(
                 this.nthWeekdayOfMonth.nth as number,
               );
-        text += ` on the ${nthText} ${dayNames[this.nthWeekdayOfMonth.weekday]}`;
+        text += ` on the ${nthText} ${DAY_NAMES[this.nthWeekdayOfMonth.weekday]}`;
       }
 
-      // Add times-of-day information
       if (this.timesOfDay && this.timesOfDay.length > 0) {
         text += ` at ${this.timesOfDay.join(', ')}`;
       }
 
-      // Add preset information
       if (this.preset === 'businessDays') {
         text += ' (business days only)';
       } else if (this.preset === 'weekends') {
         text += ' (weekends only)';
       }
 
-      // Add end condition
       if (this.count) {
         text += `, ${this.count} times`;
       } else if (this.endDate) {
@@ -1796,14 +1735,10 @@ export class Quickurrence {
    * Generate human-readable text describing this recurrence rule
    */
   static toHumanText(quickurrenceOptions: QuickurrenceOptions): string {
-    // Clean the options to remove incompatible combinations before creating instance
     const cleanedOptions = Quickurrence.clean(quickurrenceOptions);
     return new Quickurrence(cleanedOptions).toHumanText();
   }
 
-  /**
-   * Capitalize the first letter of a string
-   */
   private static capitalize(str: string): string {
     return str.charAt(0).toUpperCase() + str.slice(1);
   }

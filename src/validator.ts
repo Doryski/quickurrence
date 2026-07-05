@@ -31,11 +31,9 @@ export class QuickurrenceValidator {
       preset,
     } = options;
 
-    // Validate basic options (now optional but validate if provided)
     this.validateStartDate(startDate);
     this.validateRule(rule);
 
-    // Validate optional options
     this.validateTimezone(timezone);
     this.validateInterval(interval);
     this.validateWeekStartsOn(weekStartsOn);
@@ -46,7 +44,6 @@ export class QuickurrenceValidator {
     this.validatePreset(preset);
     this.validateTimesOfDay(options.timesOfDay);
 
-    // Validate rule-specific options
     this.validateWeeklyOptions(rule, weekDays);
     this.validateMonthlyOptions(
       rule,
@@ -55,7 +52,6 @@ export class QuickurrenceValidator {
       nthWeekdayOfMonth,
     );
 
-    // Validate mutual exclusions
     this.validateMutualExclusions(
       monthDay,
       nthWeekdayOfMonth,
@@ -75,10 +71,8 @@ export class QuickurrenceValidator {
   ): void {
     if (!weekDays) return;
 
-    // Only validate if rule is provided
     if (rule === undefined) return;
 
-    // weekDays is only valid for weekly recurrence
     if (rule !== 'weekly') {
       throw QuickurrenceError.configuration(
         'weekDays option is only valid for weekly recurrence',
@@ -91,7 +85,6 @@ export class QuickurrenceValidator {
       );
     }
 
-    // weekDays should not be empty
     if (weekDays.length === 0) {
       throw QuickurrenceError.validation(
         'weekDays cannot be empty when specified',
@@ -104,7 +97,6 @@ export class QuickurrenceValidator {
       );
     }
 
-    // weekDays should contain valid values (0-6)
     const invalidDays = weekDays.filter((day) => day < 0 || day > 6);
     if (invalidDays.length > 0) {
       throw QuickurrenceError.validation(
@@ -118,7 +110,6 @@ export class QuickurrenceValidator {
       );
     }
 
-    // weekDays should not contain duplicates
     const uniqueDays = [...new Set(weekDays)];
     if (uniqueDays.length !== weekDays.length) {
       throw QuickurrenceError.validation(
@@ -142,10 +133,8 @@ export class QuickurrenceValidator {
     monthDayMode: string | undefined,
     nthWeekdayOfMonth: NthWeekdayConfig | undefined,
   ): void {
-    // Only validate if rule is provided
     if (rule === undefined) return;
 
-    // monthDay and monthDayMode are only valid for monthly recurrence
     if (
       (monthDay !== undefined ||
         (monthDayMode !== undefined && monthDay === undefined)) &&
@@ -162,7 +151,6 @@ export class QuickurrenceValidator {
       );
     }
 
-    // monthDay should be between 1-31
     if (monthDay !== undefined) {
       if (monthDay < 1 || monthDay > 31) {
         throw QuickurrenceError.validation(
@@ -177,12 +165,10 @@ export class QuickurrenceValidator {
       }
     }
 
-    // monthDayMode should be valid
     if (monthDayMode !== undefined) {
       this.validateMonthDayMode(monthDayMode);
     }
 
-    // nthWeekdayOfMonth is only valid for monthly recurrence
     if (nthWeekdayOfMonth && rule !== 'monthly') {
       throw QuickurrenceError.configuration(
         'nthWeekdayOfMonth option is only valid for monthly recurrence',
@@ -195,7 +181,6 @@ export class QuickurrenceValidator {
       );
     }
 
-    // Validate nthWeekdayOfMonth configuration
     if (nthWeekdayOfMonth) {
       this.validateNthWeekdayConfig(nthWeekdayOfMonth);
     }
@@ -207,7 +192,6 @@ export class QuickurrenceValidator {
   private static validateNthWeekdayConfig(config: NthWeekdayConfig): void {
     const { weekday, nth } = config;
 
-    // weekday should be between 0-6
     if (weekday < 0 || weekday > 6) {
       throw QuickurrenceError.validation(
         `Invalid weekday in nthWeekdayOfMonth: ${weekday}. Weekday must be between 0-6`,
@@ -220,7 +204,6 @@ export class QuickurrenceValidator {
       );
     }
 
-    // nth should be 1-4 or 'last'
     if (typeof nth === 'number' && (nth < 1 || nth > 4)) {
       throw QuickurrenceError.validation(
         `Invalid nth in nthWeekdayOfMonth: ${nth}. Nth must be 1, 2, 3, 4, or 'last'`,
@@ -257,7 +240,6 @@ export class QuickurrenceValidator {
     condition?: boolean | ((date: Date) => boolean),
     preset?: Preset,
   ): void {
-    // Cannot use both monthDay and nthWeekdayOfMonth
     if (monthDay !== undefined && nthWeekdayOfMonth) {
       throw QuickurrenceError.configuration(
         'Cannot use both monthDay and nthWeekdayOfMonth options. Choose one approach for monthly recurrence.',
@@ -268,7 +250,6 @@ export class QuickurrenceValidator {
       );
     }
 
-    // Cannot use both count and endDate
     if (count !== undefined && endDate !== undefined) {
       throw QuickurrenceError.configuration(
         'Cannot use both count and endDate options. Choose one approach to limit occurrences.',
@@ -279,7 +260,6 @@ export class QuickurrenceValidator {
       );
     }
 
-    // Cannot use both preset and condition
     if (preset !== undefined && condition !== undefined) {
       throw QuickurrenceError.configuration(
         'Cannot use both preset and condition options. Choose one approach for filtering occurrences.',
@@ -297,7 +277,6 @@ export class QuickurrenceValidator {
   private static validateCount(count?: number): void {
     if (count === undefined) return;
 
-    // count should be a positive integer
     if (count <= 0 || !Number.isInteger(count)) {
       throw QuickurrenceError.validation(
         'count must be a positive integer',
@@ -317,7 +296,6 @@ export class QuickurrenceValidator {
   private static validateExcludeDates(excludeDates?: Date[]): void {
     if (!excludeDates) return;
 
-    // excludeDates should not be an empty array
     if (excludeDates.length === 0) {
       throw QuickurrenceError.validation(
         'excludeDates cannot be empty when specified',
@@ -330,7 +308,6 @@ export class QuickurrenceValidator {
       );
     }
 
-    // Each exclude date should be a valid Date object
     const invalidDates = excludeDates.filter(
       (date) => !(date instanceof Date) || isNaN(date.getTime()),
     );
@@ -419,7 +396,6 @@ export class QuickurrenceValidator {
   ): void {
     if (!endDate) return;
 
-    // Validate that endDate is a valid Date object
     if (!(endDate instanceof Date) || isNaN(endDate.getTime())) {
       throw QuickurrenceError.validation(
         'endDate must be a valid Date object',
@@ -432,7 +408,6 @@ export class QuickurrenceValidator {
       );
     }
 
-    // Only validate against startDate if startDate is provided
     if (startDate && isBefore(endDate, startDate)) {
       throw QuickurrenceError.dateTime(
         'End date cannot be before start date',

@@ -44,7 +44,6 @@ describe('Quickurrence', () => {
       const rule = new Quickurrence({ timezone });
 
       expect(rule.getStartDate()).toBeDefined();
-      // Should use timezone for calculating today
       const today = startOfDay(new Date(), { in: tz(timezone) });
       expect(rule.getStartDate()).toEqual(today);
     });
@@ -81,7 +80,7 @@ describe('Quickurrence', () => {
 
   describe('Weekly recurrence', () => {
     it('should generate weekly occurrences', () => {
-      const startDate = new UTCDateMini('2024-01-01'); // Monday
+      const startDate = new UTCDateMini('2024-01-01');
       const rule = new Quickurrence({ startDate, rule: 'weekly' });
 
       const range = {
@@ -98,14 +97,14 @@ describe('Quickurrence', () => {
     });
 
     it('should default to Monday as week start (weekStartsOn = 1)', () => {
-      const startDate = new UTCDateMini('2024-01-01'); // Monday
+      const startDate = new UTCDateMini('2024-01-01');
       const rule = new Quickurrence({ startDate, rule: 'weekly' });
 
-      expect(rule.getWeekStartsOn()).toBe(1); // Monday
+      expect(rule.getWeekStartsOn()).toBe(1);
     });
 
     it('should generate weekly occurrences with Sunday as week start (weekStartsOn = 0)', () => {
-      const startDate = new UTCDateMini('2024-01-01'); // Monday
+      const startDate = new UTCDateMini('2024-01-01');
       const rule = new Quickurrence({
         startDate,
         rule: 'weekly',
@@ -127,7 +126,7 @@ describe('Quickurrence', () => {
     });
 
     it('should generate weekly occurrences with Wednesday as week start (weekStartsOn = 3)', () => {
-      const startDate = new UTCDateMini('2024-01-01'); // Monday
+      const startDate = new UTCDateMini('2024-01-01');
       const rule = new Quickurrence({
         startDate,
         rule: 'weekly',
@@ -149,13 +148,12 @@ describe('Quickurrence', () => {
     });
 
     it('should handle different weekStartsOn values correctly', () => {
-      // Test with Friday start date and different weekStartsOn values
-      const startDate = new UTCDateMini('2024-01-05'); // Friday
+      const startDate = new UTCDateMini('2024-01-05');
       const rule = new Quickurrence({
         startDate,
         rule: 'weekly',
         weekStartsOn: 5,
-      }); // Friday as week start
+      });
 
       const range = {
         start: new UTCDateMini('2024-01-05'),
@@ -174,12 +172,12 @@ describe('Quickurrence', () => {
     });
 
     it('should get next occurrence with custom weekStartsOn', () => {
-      const startDate = new UTCDateMini('2024-01-01'); // Monday
+      const startDate = new UTCDateMini('2024-01-01');
       const rule = new Quickurrence({
         startDate,
         rule: 'weekly',
         weekStartsOn: 0,
-      }); // Sunday as week start
+      });
 
       const nextOccurrence = rule.getNextOccurrence(
         new UTCDateMini('2024-01-03'),
@@ -213,7 +211,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 1, // 1st day of month
+            monthDay: 1,
             monthDayMode: 'skip',
           });
 
@@ -236,7 +234,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 5, // 5th day of month
+            monthDay: 5,
             monthDayMode: 'skip',
           });
 
@@ -259,7 +257,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 29, // 29th day of month
+            monthDay: 29,
             monthDayMode: 'skip',
           });
 
@@ -270,10 +268,9 @@ describe('Quickurrence', () => {
 
           const occurrences = rule.getAllOccurrences(range);
 
-          // Should include Jan 29, Feb 29 (leap year), Mar 29, Apr 29
           expect(occurrences).toHaveLength(4);
           expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-29'));
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-29')); // 2024 is leap year
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-29'));
           expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-29'));
           expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-29'));
         });
@@ -283,7 +280,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 30, // 30th day of month
+            monthDay: 30,
             monthDayMode: 'skip',
           });
 
@@ -294,7 +291,6 @@ describe('Quickurrence', () => {
 
           const occurrences = rule.getAllOccurrences(range);
 
-          // Should skip February (only 29 days in 2024), include Jan 30, Mar 30, Apr 30
           expect(occurrences).toHaveLength(3);
           expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-30'));
           expect(occurrences[1]).toEqual(new UTCDateMini('2024-03-30'));
@@ -306,7 +302,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 31, // 31st day of month
+            monthDay: 31,
             monthDayMode: 'skip',
           });
 
@@ -317,7 +313,6 @@ describe('Quickurrence', () => {
 
           const occurrences = rule.getAllOccurrences(range);
 
-          // Should include only months with 31 days: Jan, Mar, May, Jul
           expect(occurrences).toHaveLength(4);
           expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-31'));
           expect(occurrences[1]).toEqual(new UTCDateMini('2024-03-31'));
@@ -332,7 +327,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 29, // 29th day of month
+            monthDay: 29,
             monthDayMode: 'last',
           });
 
@@ -345,7 +340,7 @@ describe('Quickurrence', () => {
 
           expect(occurrences).toHaveLength(4);
           expect(occurrences[0]).toEqual(new UTCDateMini('2025-01-29'));
-          expect(occurrences[1]).toEqual(new UTCDateMini('2025-02-28')); // Last day of Feb in non-leap year
+          expect(occurrences[1]).toEqual(new UTCDateMini('2025-02-28'));
           expect(occurrences[2]).toEqual(new UTCDateMini('2025-03-29'));
           expect(occurrences[3]).toEqual(new UTCDateMini('2025-04-29'));
         });
@@ -355,7 +350,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 30, // 30th day of month
+            monthDay: 30,
             monthDayMode: 'last',
           });
 
@@ -368,7 +363,7 @@ describe('Quickurrence', () => {
 
           expect(occurrences).toHaveLength(4);
           expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-30'));
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-29')); // Last day of Feb in leap year
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-29'));
           expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-30'));
           expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-30'));
         });
@@ -378,7 +373,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 31, // 31st day of month
+            monthDay: 31,
             monthDayMode: 'last',
           });
 
@@ -391,23 +386,22 @@ describe('Quickurrence', () => {
 
           expect(occurrences).toHaveLength(7);
           expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-31'));
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-29')); // Last day of Feb
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-29'));
           expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-31'));
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-30')); // Last day of Apr
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-30'));
           expect(occurrences[4]).toEqual(new UTCDateMini('2024-05-31'));
-          expect(occurrences[5]).toEqual(new UTCDateMini('2024-06-30')); // Last day of Jun
+          expect(occurrences[5]).toEqual(new UTCDateMini('2024-06-30'));
           expect(occurrences[6]).toEqual(new UTCDateMini('2024-07-31'));
         });
       });
 
       describe('Leap year scenarios', () => {
         it('should handle 29th in leap year vs non-leap year with skip mode', () => {
-          // Leap year test
           const startDate2024 = new UTCDateMini('2024-01-01');
           const rule2024 = new Quickurrence({
             startDate: startDate2024,
             rule: 'monthly',
-            monthDay: 29, // 29th day of month
+            monthDay: 29,
             monthDayMode: 'skip',
           });
 
@@ -420,12 +414,11 @@ describe('Quickurrence', () => {
           expect(occurrences2024).toHaveLength(1);
           expect(occurrences2024[0]).toEqual(new UTCDateMini('2024-02-29'));
 
-          // Non-leap year test
           const startDate2025 = new UTCDateMini('2025-01-01');
           const rule2025 = new Quickurrence({
             startDate: startDate2025,
             rule: 'monthly',
-            monthDay: 29, // 29th day of month
+            monthDay: 29,
             monthDayMode: 'skip',
           });
 
@@ -436,16 +429,15 @@ describe('Quickurrence', () => {
 
           const occurrences2025 = rule2025.getAllOccurrences(range2025);
           expect(occurrences2025).toHaveLength(1);
-          expect(occurrences2025[0]).toEqual(new UTCDateMini('2025-03-29')); // February skipped
+          expect(occurrences2025[0]).toEqual(new UTCDateMini('2025-03-29'));
         });
 
         it('should handle 29th in leap year vs non-leap year with last mode', () => {
-          // Leap year test
           const startDate2024 = new UTCDateMini('2024-01-01');
           const rule2024 = new Quickurrence({
             startDate: startDate2024,
             rule: 'monthly',
-            monthDay: 29, // 29th day of month
+            monthDay: 29,
             monthDayMode: 'last',
           });
 
@@ -458,12 +450,11 @@ describe('Quickurrence', () => {
           expect(occurrences2024).toHaveLength(1);
           expect(occurrences2024[0]).toEqual(new UTCDateMini('2024-02-29'));
 
-          // Non-leap year test
           const startDate2025 = new UTCDateMini('2025-01-01');
           const rule2025 = new Quickurrence({
             startDate: startDate2025,
             rule: 'monthly',
-            monthDay: 29, // 29th day of month
+            monthDay: 29,
             monthDayMode: 'last',
           });
 
@@ -474,7 +465,7 @@ describe('Quickurrence', () => {
 
           const occurrences2025 = rule2025.getAllOccurrences(range2025);
           expect(occurrences2025).toHaveLength(1);
-          expect(occurrences2025[0]).toEqual(new UTCDateMini('2025-02-28')); // Last day of Feb
+          expect(occurrences2025[0]).toEqual(new UTCDateMini('2025-02-28'));
         });
       });
 
@@ -484,12 +475,12 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 15, // 15th day of month
+            monthDay: 15,
             monthDayMode: 'skip',
           });
 
           const nextOccurrence = rule.getNextOccurrence(
-            new UTCDateMini('2024-01-20'), // After the 15th
+            new UTCDateMini('2024-01-20'),
           );
           expect(nextOccurrence).toEqual(new UTCDateMini('2024-02-15'));
         });
@@ -499,7 +490,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 31, // 31st day of month
+            monthDay: 31,
             monthDayMode: 'skip',
           });
 
@@ -514,14 +505,14 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 31, // 31st day of month
+            monthDay: 31,
             monthDayMode: 'skip',
           });
 
           const nextOccurrence = rule.getNextOccurrence(
-            new UTCDateMini('2024-02-15'), // February doesn't have 31st
+            new UTCDateMini('2024-02-15'),
           );
-          expect(nextOccurrence).toEqual(new UTCDateMini('2024-03-31')); // Skip February
+          expect(nextOccurrence).toEqual(new UTCDateMini('2024-03-31'));
         });
 
         it('should get next occurrence with last mode for February', () => {
@@ -529,14 +520,14 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 31, // 31st day of month
+            monthDay: 31,
             monthDayMode: 'last',
           });
 
           const nextOccurrence = rule.getNextOccurrence(
-            new UTCDateMini('2024-02-15'), // February doesn't have 31st
+            new UTCDateMini('2024-02-15'),
           );
-          expect(nextOccurrence).toEqual(new UTCDateMini('2024-02-29')); // Last day of Feb
+          expect(nextOccurrence).toEqual(new UTCDateMini('2024-02-29'));
         });
 
         it('should return next month when after date equals the monthDay occurrence (bug fix)', () => {
@@ -548,7 +539,7 @@ describe('Quickurrence', () => {
           });
 
           const nextOccurrence = rule.getNextOccurrence(
-            new UTCDateMini('2024-02-01'), // Same as startDate and monthDay
+            new UTCDateMini('2024-02-01'),
           );
           expect(nextOccurrence).toEqual(new UTCDateMini('2024-03-01'));
         });
@@ -562,7 +553,7 @@ describe('Quickurrence', () => {
           });
 
           const nextOccurrence = rule.getNextOccurrence(
-            new UTCDateMini('2024-01-15'), // Falls exactly on monthDay
+            new UTCDateMini('2024-01-15'),
           );
           expect(nextOccurrence).toEqual(new UTCDateMini('2024-02-15'));
         });
@@ -624,7 +615,7 @@ describe('Quickurrence', () => {
             startDate,
             rule: 'monthly',
             interval: 2,
-            monthDay: 15, // 15th day of month
+            monthDay: 15,
             monthDayMode: 'skip',
           });
 
@@ -648,7 +639,7 @@ describe('Quickurrence', () => {
             startDate,
             rule: 'monthly',
             interval: 3,
-            monthDay: 31, // 31st day of month
+            monthDay: 31,
             monthDayMode: 'last',
           });
 
@@ -661,7 +652,7 @@ describe('Quickurrence', () => {
 
           expect(occurrences).toHaveLength(4);
           expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-31'));
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-04-30')); // Last day of April
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-04-30'));
           expect(occurrences[2]).toEqual(new UTCDateMini('2024-07-31'));
           expect(occurrences[3]).toEqual(new UTCDateMini('2024-10-31'));
         });
@@ -675,7 +666,7 @@ describe('Quickurrence', () => {
             new Quickurrence({
               startDate,
               rule: 'daily',
-              monthDay: 15, // Not allowed for daily
+              monthDay: 15,
             });
           }).toThrow(
             'monthDay and monthDayMode options are only valid for monthly recurrence',
@@ -689,7 +680,7 @@ describe('Quickurrence', () => {
             new Quickurrence({
               startDate,
               rule: 'weekly',
-              monthDayMode: 'last', // Not allowed for weekly
+              monthDayMode: 'last',
             });
           }).toThrow(
             'monthDay and monthDayMode options are only valid for monthly recurrence',
@@ -704,7 +695,7 @@ describe('Quickurrence', () => {
               startDate,
               rule: 'monthly',
               // @ts-expect-error - Testing invalid monthDay value
-              monthDay: 32, // Invalid (should be 1-31)
+              monthDay: 32,
             });
           }).toThrow('monthDay must be between 1-31');
 
@@ -713,7 +704,7 @@ describe('Quickurrence', () => {
               startDate,
               rule: 'monthly',
               // @ts-expect-error - Testing invalid monthDay value
-              monthDay: 0, // Invalid (should be 1-31)
+              monthDay: 0,
             });
           }).toThrow('monthDay must be between 1-31');
         });
@@ -723,7 +714,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 1, // 1st day of month
+            monthDay: 1,
             monthDayMode: 'skip',
           });
 
@@ -745,7 +736,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            monthDay: 31, // 31st day of month
+            monthDay: 31,
             monthDayMode: 'skip',
           });
 
@@ -756,7 +747,7 @@ describe('Quickurrence', () => {
 
           const occurrences = rule.getAllOccurrences(range);
 
-          expect(occurrences).toHaveLength(2); // Jan 31 and Mar 31, skipping Feb
+          expect(occurrences).toHaveLength(2);
           expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-31'));
           expect(occurrences[1]).toEqual(new UTCDateMini('2024-03-31'));
         });
@@ -818,7 +809,6 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            // No monthDay specified - should behave as before
           });
 
           const range = {
@@ -844,7 +834,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            nthWeekdayOfMonth: { weekday: 1, nth: 1 }, // 1st Monday
+            nthWeekdayOfMonth: { weekday: 1, nth: 1 },
           });
 
           const range = {
@@ -855,10 +845,10 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(4);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // 1st Monday of Jan
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-05')); // 1st Monday of Feb
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-04')); // 1st Monday of Mar
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-01')); // 1st Monday of Apr
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-05'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-04'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-01'));
         });
 
         it('should generate occurrences on the 2nd Wednesday of every month', () => {
@@ -866,7 +856,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            nthWeekdayOfMonth: { weekday: 3, nth: 2 }, // 2nd Wednesday
+            nthWeekdayOfMonth: { weekday: 3, nth: 2 },
           });
 
           const range = {
@@ -877,10 +867,10 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(4);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-10')); // 2nd Wednesday of Jan
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-14')); // 2nd Wednesday of Feb
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-13')); // 2nd Wednesday of Mar
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-10')); // 2nd Wednesday of Apr
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-10'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-14'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-13'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-10'));
         });
 
         it('should generate occurrences on the 3rd Friday of every month', () => {
@@ -888,7 +878,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            nthWeekdayOfMonth: { weekday: 5, nth: 3 }, // 3rd Friday
+            nthWeekdayOfMonth: { weekday: 5, nth: 3 },
           });
 
           const range = {
@@ -899,10 +889,10 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(4);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-19')); // 3rd Friday of Jan
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-16')); // 3rd Friday of Feb
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-15')); // 3rd Friday of Mar
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-19')); // 3rd Friday of Apr
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-19'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-16'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-15'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-19'));
         });
 
         it('should generate occurrences on the 4th Thursday of every month', () => {
@@ -910,7 +900,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            nthWeekdayOfMonth: { weekday: 4, nth: 4 }, // 4th Thursday
+            nthWeekdayOfMonth: { weekday: 4, nth: 4 },
           });
 
           const range = {
@@ -921,10 +911,10 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(4);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-25')); // 4th Thursday of Jan
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-22')); // 4th Thursday of Feb
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-28')); // 4th Thursday of Mar
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-25')); // 4th Thursday of Apr
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-25'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-22'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-28'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-25'));
         });
 
         it('should generate occurrences on the last Sunday of every month', () => {
@@ -932,7 +922,7 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            nthWeekdayOfMonth: { weekday: 0, nth: 'last' }, // Last Sunday
+            nthWeekdayOfMonth: { weekday: 0, nth: 'last' },
           });
 
           const range = {
@@ -943,21 +933,20 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(4);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-28')); // Last Sunday of Jan
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-25')); // Last Sunday of Feb
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-31')); // Last Sunday of Mar
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-28')); // Last Sunday of Apr
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-28'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-25'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-31'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-28'));
         });
       });
 
       describe('Edge cases', () => {
         it('should skip months where nth weekday does not exist', () => {
-          // Test case where some months might not have a 5th occurrence
           const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            nthWeekdayOfMonth: { weekday: 1, nth: 4 }, // 4th Monday
+            nthWeekdayOfMonth: { weekday: 1, nth: 4 },
           });
 
           const range = {
@@ -969,16 +958,15 @@ describe('Quickurrence', () => {
 
           // February 2024 has 4th Monday on Feb 26
           expect(occurrences).toHaveLength(1);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-02-26')); // 4th Monday of Feb
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-02-26'));
         });
 
         it('should handle months where weekday does not occur enough times', () => {
-          // Test 5th occurrence which might not exist in some months
           const startDate = new UTCDateMini('2024-03-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            nthWeekdayOfMonth: { weekday: 1, nth: 4 }, // 4th Monday
+            nthWeekdayOfMonth: { weekday: 1, nth: 4 },
           });
 
           const range = {
@@ -988,7 +976,6 @@ describe('Quickurrence', () => {
 
           const occurrences = rule.getAllOccurrences(range);
 
-          // Should include months where 4th Monday exists
           expect(occurrences.length).toBeGreaterThan(0);
           // March 2024: 4th Monday is March 25
           expect(occurrences[0]).toEqual(new UTCDateMini('2024-03-25'));
@@ -1001,13 +988,13 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            nthWeekdayOfMonth: { weekday: 1, nth: 1 }, // 1st Monday
+            nthWeekdayOfMonth: { weekday: 1, nth: 1 },
           });
 
           const nextOccurrence = rule.getNextOccurrence(
-            new UTCDateMini('2024-01-15'), // After the 1st Monday of Jan
+            new UTCDateMini('2024-01-15'),
           );
-          expect(nextOccurrence).toEqual(new UTCDateMini('2024-02-05')); // 1st Monday of Feb
+          expect(nextOccurrence).toEqual(new UTCDateMini('2024-02-05'));
         });
 
         it('should get next occurrence with last weekday', () => {
@@ -1015,13 +1002,13 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            nthWeekdayOfMonth: { weekday: 5, nth: 'last' }, // Last Friday
+            nthWeekdayOfMonth: { weekday: 5, nth: 'last' },
           });
 
           const nextOccurrence = rule.getNextOccurrence(
             new UTCDateMini('2024-01-15'),
           );
-          expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-26')); // Last Friday of Jan
+          expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-26'));
         });
 
         it('should return next month when after date equals the nth weekday occurrence (bug fix)', () => {
@@ -1029,14 +1016,14 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            nthWeekdayOfMonth: { weekday: 1, nth: 1 }, // 1st Monday
+            nthWeekdayOfMonth: { weekday: 1, nth: 1 },
           });
 
           // Jan 1st 2024 is a Monday, so 1st Monday of Jan = Jan 1st
           const nextOccurrence = rule.getNextOccurrence(
             new UTCDateMini('2024-01-01'),
           );
-          expect(nextOccurrence).toEqual(new UTCDateMini('2024-02-05')); // 1st Monday of Feb
+          expect(nextOccurrence).toEqual(new UTCDateMini('2024-02-05'));
         });
       });
 
@@ -1047,7 +1034,7 @@ describe('Quickurrence', () => {
             startDate,
             rule: 'monthly',
             interval: 2,
-            nthWeekdayOfMonth: { weekday: 1, nth: 1 }, // 1st Monday
+            nthWeekdayOfMonth: { weekday: 1, nth: 1 },
           });
 
           const range = {
@@ -1058,10 +1045,10 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(4);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // 1st Monday of Jan
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-03-04')); // 1st Monday of Mar
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-05-06')); // 1st Monday of May
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-07-01')); // 1st Monday of Jul
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-03-04'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-05-06'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-07-01'));
         });
 
         it('should generate occurrences every 3 months on last Friday', () => {
@@ -1070,7 +1057,7 @@ describe('Quickurrence', () => {
             startDate,
             rule: 'monthly',
             interval: 3,
-            nthWeekdayOfMonth: { weekday: 5, nth: 'last' }, // Last Friday
+            nthWeekdayOfMonth: { weekday: 5, nth: 'last' },
           });
 
           const range = {
@@ -1081,10 +1068,10 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(4);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-26')); // Last Friday of Jan
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-04-26')); // Last Friday of Apr
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-07-26')); // Last Friday of Jul
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-10-25')); // Last Friday of Oct
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-26'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-04-26'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-07-26'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-10-25'));
         });
       });
 
@@ -1096,7 +1083,7 @@ describe('Quickurrence', () => {
             new Quickurrence({
               startDate,
               rule: 'daily',
-              nthWeekdayOfMonth: { weekday: 1, nth: 1 }, // Not allowed for daily
+              nthWeekdayOfMonth: { weekday: 1, nth: 1 },
             });
           }).toThrow(
             'nthWeekdayOfMonth option is only valid for monthly recurrence',
@@ -1111,7 +1098,7 @@ describe('Quickurrence', () => {
               startDate,
               rule: 'monthly',
               // @ts-expect-error - Testing invalid weekday
-              nthWeekdayOfMonth: { weekday: 7, nth: 1 }, // 7 is invalid (should be 0-6)
+              nthWeekdayOfMonth: { weekday: 7, nth: 1 },
             });
           }).toThrow(
             'Invalid weekday in nthWeekdayOfMonth: 7. Weekday must be between 0-6',
@@ -1126,7 +1113,7 @@ describe('Quickurrence', () => {
               startDate,
               rule: 'monthly',
               // @ts-expect-error - Testing invalid nth
-              nthWeekdayOfMonth: { weekday: 1, nth: 5 }, // 5 is invalid (should be 1-4 or 'last')
+              nthWeekdayOfMonth: { weekday: 1, nth: 5 },
             });
           }).toThrow(
             "Invalid nth in nthWeekdayOfMonth: 5. Nth must be 1, 2, 3, 4, or 'last'",
@@ -1141,7 +1128,7 @@ describe('Quickurrence', () => {
               startDate,
               rule: 'monthly',
               // @ts-expect-error - Testing invalid nth
-              nthWeekdayOfMonth: { weekday: 1, nth: 'first' }, // 'first' is invalid (should be 'last')
+              nthWeekdayOfMonth: { weekday: 1, nth: 'first' },
             });
           }).toThrow(
             "Invalid nth in nthWeekdayOfMonth: first. Nth must be 1, 2, 3, 4, or 'last'",
@@ -1200,12 +1187,11 @@ describe('Quickurrence', () => {
 
           const config = rule.getNthWeekdayOfMonth();
           if (config) {
-            // Modify returned config
             config.nth = 2;
           }
 
           const configAgain = rule.getNthWeekdayOfMonth();
-          expect(configAgain?.nth).toBe(1); // Should not be modified
+          expect(configAgain?.nth).toBe(1);
         });
       });
 
@@ -1215,7 +1201,6 @@ describe('Quickurrence', () => {
           const rule = new Quickurrence({
             startDate,
             rule: 'monthly',
-            // No nthWeekdayOfMonth specified - should behave as before
           });
 
           const range = {
@@ -1288,7 +1273,7 @@ describe('Quickurrence', () => {
 
       const range = {
         start: new UTCDateMini('2024-02-01'),
-        end: new UTCDateMini('2024-01-31'), // end before start
+        end: new UTCDateMini('2024-01-31'),
       };
 
       const occurrences = rule.getAllOccurrences(range);
@@ -1305,7 +1290,6 @@ describe('Quickurrence', () => {
         timezone: 'America/New_York',
       });
 
-      // Test that the rule was created successfully with timezone
       expect(rule.getRule()).toBe('daily');
       expect(rule.getStartDate()).toBeDefined();
     });
@@ -1338,7 +1322,6 @@ describe('Quickurrence', () => {
       const afterDate = new UTCDateMini('2024-01-02');
       const nextOccurrence = rule.getNextOccurrence(afterDate);
 
-      // Should return the next occurrence after the afterDate
       expect(nextOccurrence).toBeDefined();
       expect(nextOccurrence.getTime()).toBeGreaterThan(afterDate.getTime());
     });
@@ -1414,7 +1397,6 @@ describe('Quickurrence', () => {
           interval: 2,
         });
 
-        // Complete task on Jan 1 (start date) -> next should be Jan 3
         const nextOccurrence = rule.getNextOccurrence(
           new UTCDateMini('2024-01-01'),
         );
@@ -1429,22 +1411,15 @@ describe('Quickurrence', () => {
           interval: 2,
         });
 
-        // Simulate completing tasks over multiple occurrences
-        // Valid dates: Jan 1, Jan 3, Jan 5, Jan 7, Jan 9...
-
-        // Complete on Jan 1 -> next is Jan 3
         let next = rule.getNextOccurrence(new UTCDateMini('2024-01-01'));
         expect(next).toEqual(new UTCDateMini('2024-01-03'));
 
-        // Complete on Jan 3 -> next is Jan 5
         next = rule.getNextOccurrence(new UTCDateMini('2024-01-03'));
         expect(next).toEqual(new UTCDateMini('2024-01-05'));
 
-        // Complete on Jan 5 -> next is Jan 7
         next = rule.getNextOccurrence(new UTCDateMini('2024-01-05'));
         expect(next).toEqual(new UTCDateMini('2024-01-07'));
 
-        // Complete on Jan 7 -> next is Jan 9
         next = rule.getNextOccurrence(new UTCDateMini('2024-01-07'));
         expect(next).toEqual(new UTCDateMini('2024-01-09'));
       });
@@ -1457,17 +1432,12 @@ describe('Quickurrence', () => {
           interval: 3,
         });
 
-        // Valid dates: Jan 1, Jan 4, Jan 7, Jan 10...
-
-        // Complete on Jan 1 -> next is Jan 4
         let next = rule.getNextOccurrence(new UTCDateMini('2024-01-01'));
         expect(next).toEqual(new UTCDateMini('2024-01-04'));
 
-        // Complete on Jan 4 -> next is Jan 7
         next = rule.getNextOccurrence(new UTCDateMini('2024-01-04'));
         expect(next).toEqual(new UTCDateMini('2024-01-07'));
 
-        // Complete on Jan 7 -> next is Jan 10
         next = rule.getNextOccurrence(new UTCDateMini('2024-01-07'));
         expect(next).toEqual(new UTCDateMini('2024-01-10'));
       });
@@ -1480,13 +1450,9 @@ describe('Quickurrence', () => {
           interval: 7,
         });
 
-        // Valid dates: Jan 1, Jan 8, Jan 15, Jan 22...
-
-        // Complete on Jan 1 -> next is Jan 8
         let next = rule.getNextOccurrence(new UTCDateMini('2024-01-01'));
         expect(next).toEqual(new UTCDateMini('2024-01-08'));
 
-        // Complete on Jan 8 -> next is Jan 15
         next = rule.getNextOccurrence(new UTCDateMini('2024-01-08'));
         expect(next).toEqual(new UTCDateMini('2024-01-15'));
       });
@@ -1503,9 +1469,6 @@ describe('Quickurrence', () => {
           timezone: 'Europe/Warsaw',
         });
 
-        // Valid dates: Nov 8, Nov 10, Nov 12, Nov 14...
-
-        // Complete on Nov 8 -> next should be Nov 10, NOT Nov 9
         const nov8 = new TZDate(
           '2025-11-08T01:00:00.000+01:00',
           'Europe/Warsaw',
@@ -1519,7 +1482,6 @@ describe('Quickurrence', () => {
           startOfDay(nov10, { in: tz('Europe/Warsaw') }),
         );
 
-        // Complete on Nov 10 -> next should be Nov 12
         next = rule.getNextOccurrence(nov10);
         const nov12 = new TZDate(
           '2025-11-12T01:00:00.000+01:00',
@@ -1538,7 +1500,6 @@ describe('Quickurrence', () => {
           interval: 2,
         });
 
-        // When completing task on a valid occurrence date, should return NEXT occurrence
         const nextFromJan1 = rule.getNextOccurrence(
           new UTCDateMini('2024-01-01'),
         );
@@ -1560,7 +1521,6 @@ describe('Quickurrence', () => {
           startDate: new Date('2025-11-08T01:00:00.000+01:00'),
         };
 
-        // Update with a new startDate (simulating backend behavior)
         const updated = Quickurrence.update(options, {
           startDate: new Date('2025-11-10T01:00:00.000+01:00'),
           timezone: 'Europe/Warsaw',
@@ -1572,8 +1532,6 @@ describe('Quickurrence', () => {
       });
 
       it('should align to interval grid even when dueDate is misaligned', () => {
-        // Scenario: Task created with interval 2, starting Nov 8
-        // Valid dates: Nov 8, Nov 10, Nov 12, Nov 14...
         const startDate = new UTCDateMini('2024-11-08');
         const rule = new Quickurrence({
           startDate,
@@ -1581,18 +1539,14 @@ describe('Quickurrence', () => {
           interval: 2,
         });
 
-        // If dueDate was manually changed to Nov 9 (misaligned)
-        // Next occurrence should still align to the grid: Nov 10
         const nov9 = new UTCDateMini('2024-11-09');
         const nextFromMisaligned = rule.getNextOccurrence(nov9);
         expect(nextFromMisaligned).toEqual(new UTCDateMini('2024-11-10'));
 
-        // Next from Nov 10 should be Nov 12 (maintaining grid)
         const nov10 = new UTCDateMini('2024-11-10');
         const nextFromAligned = rule.getNextOccurrence(nov10);
         expect(nextFromAligned).toEqual(new UTCDateMini('2024-11-12'));
 
-        // Even from Nov 11 (misaligned), should return Nov 12
         const nov11 = new UTCDateMini('2024-11-11');
         const nextFromNov11 = rule.getNextOccurrence(nov11);
         expect(nextFromNov11).toEqual(new UTCDateMini('2024-11-12'));
@@ -1606,24 +1560,18 @@ describe('Quickurrence', () => {
           interval: 3,
         });
 
-        // Valid dates: Jan 1, Jan 4, Jan 7, Jan 10...
-
-        // From Jan 2 (misaligned) -> should return Jan 4
         expect(rule.getNextOccurrence(new UTCDateMini('2024-01-02'))).toEqual(
           new UTCDateMini('2024-01-04'),
         );
 
-        // From Jan 3 (misaligned) -> should return Jan 4
         expect(rule.getNextOccurrence(new UTCDateMini('2024-01-03'))).toEqual(
           new UTCDateMini('2024-01-04'),
         );
 
-        // From Jan 5 (misaligned) -> should return Jan 7
         expect(rule.getNextOccurrence(new UTCDateMini('2024-01-05'))).toEqual(
           new UTCDateMini('2024-01-07'),
         );
 
-        // From Jan 6 (misaligned) -> should return Jan 7
         expect(rule.getNextOccurrence(new UTCDateMini('2024-01-06'))).toEqual(
           new UTCDateMini('2024-01-07'),
         );
@@ -1632,7 +1580,7 @@ describe('Quickurrence', () => {
 
     describe('Weekly recurrence with intervals', () => {
       it('should generate weekly occurrences with interval 2', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
@@ -1653,7 +1601,7 @@ describe('Quickurrence', () => {
       });
 
       it('should generate weekly occurrences with interval 3', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
@@ -1936,7 +1884,6 @@ describe('Quickurrence', () => {
       const retrievedOptions = rule.getOptions();
 
       expect(retrievedOptions).toEqual(originalOptions);
-      // Ensure it's a copy, not the same reference
       expect(retrievedOptions).not.toBe(originalOptions);
       expect(retrievedOptions.startDate).not.toBe(startDate);
     });
@@ -1955,7 +1902,7 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-01-10'), // Range end is after rule end
+          end: new UTCDateMini('2024-01-10'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
@@ -1967,7 +1914,7 @@ describe('Quickurrence', () => {
       });
 
       it('should respect endDate in weekly recurrence', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const endDate = new UTCDateMini('2024-01-15');
         const rule = new Quickurrence({
           startDate,
@@ -1977,7 +1924,7 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-02-01'), // Range end is after rule end
+          end: new UTCDateMini('2024-02-01'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
@@ -1999,7 +1946,7 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-01-03'), // Range end is before rule end
+          end: new UTCDateMini('2024-01-03'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
@@ -2012,7 +1959,7 @@ describe('Quickurrence', () => {
 
       it('should throw error when endDate is before startDate in constructor', () => {
         const startDate = new UTCDateMini('2024-01-05');
-        const endDate = new UTCDateMini('2024-01-01'); // End before start
+        const endDate = new UTCDateMini('2024-01-01');
 
         expect(() => {
           new Quickurrence({
@@ -2025,7 +1972,7 @@ describe('Quickurrence', () => {
 
       it('should allow endDate equal to startDate', () => {
         const startDate = new UTCDateMini('2024-01-01');
-        const endDate = new UTCDateMini('2024-01-01'); // Same date
+        const endDate = new UTCDateMini('2024-01-01');
 
         expect(() => {
           new Quickurrence({
@@ -2047,7 +1994,6 @@ describe('Quickurrence', () => {
           endDate,
         });
 
-        // Requesting next occurrence after the end date
         expect(() => {
           rule.getNextOccurrence(new UTCDateMini('2024-01-03'));
         }).toThrow('No more occurrences within the specified end date');
@@ -2145,11 +2091,11 @@ describe('Quickurrence', () => {
     describe('Weekly recurrence with specific weekdays', () => {
       describe('Basic weekday selection', () => {
         it('should generate occurrences on Monday only', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            weekDays: [1], // Monday
+            weekDays: [1],
           });
 
           const range = {
@@ -2160,19 +2106,19 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(5);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-08')); // Monday
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-15')); // Monday
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-22')); // Monday
-          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-29')); // Monday
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-08'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-15'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-22'));
+          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-29'));
         });
 
         it('should generate occurrences on Wednesday only', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            weekDays: [3], // Wednesday
+            weekDays: [3],
           });
 
           const range = {
@@ -2183,19 +2129,19 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(5);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-10')); // Wednesday
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-17')); // Wednesday
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-24')); // Wednesday
-          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-31')); // Wednesday
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-03'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-10'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-17'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-24'));
+          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-31'));
         });
 
         it('should generate occurrences on Sunday only', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            weekDays: [0], // Sunday
+            weekDays: [0],
           });
 
           const range = {
@@ -2206,20 +2152,20 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(4);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-07')); // Sunday
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-14')); // Sunday
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-21')); // Sunday
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-28')); // Sunday
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-07'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-14'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-21'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-28'));
         });
       });
 
       describe('Multiple weekdays selection', () => {
         it('should generate occurrences on Monday and Wednesday', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            weekDays: [1, 3], // Monday and Wednesday
+            weekDays: [1, 3],
           });
 
           const range = {
@@ -2230,19 +2176,19 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(5);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-08')); // Monday
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-10')); // Wednesday
-          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-15')); // Monday
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-08'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-10'));
+          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-15'));
         });
 
         it('should generate occurrences on Monday, Wednesday, and Friday', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            weekDays: [1, 3, 5], // Monday, Wednesday, Friday
+            weekDays: [1, 3, 5],
           });
 
           const range = {
@@ -2253,21 +2199,21 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(7);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-05')); // Friday
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-08')); // Monday
-          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-10')); // Wednesday
-          expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-12')); // Friday
-          expect(occurrences[6]).toEqual(new UTCDateMini('2024-01-15')); // Monday
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-05'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-08'));
+          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-10'));
+          expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-12'));
+          expect(occurrences[6]).toEqual(new UTCDateMini('2024-01-15'));
         });
 
         it('should generate weekend occurrences (Saturday and Sunday)', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            weekDays: [0, 6], // Sunday and Saturday
+            weekDays: [0, 6],
           });
 
           const range = {
@@ -2278,20 +2224,20 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(6);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-06')); // Saturday
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-07')); // Sunday
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-13')); // Saturday
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-14')); // Sunday
-          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-20')); // Saturday
-          expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-21')); // Sunday
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-06'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-07'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-13'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-14'));
+          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-20'));
+          expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-21'));
         });
 
         it('should generate all weekday occurrences (Monday through Friday)', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            weekDays: [1, 2, 3, 4, 5], // Monday through Friday
+            weekDays: [1, 2, 3, 4, 5],
           });
 
           const range = {
@@ -2302,71 +2248,71 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(10);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02')); // Tuesday
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-04')); // Thursday
-          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-05')); // Friday
-          expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-08')); // Monday
-          expect(occurrences[6]).toEqual(new UTCDateMini('2024-01-09')); // Tuesday
-          expect(occurrences[7]).toEqual(new UTCDateMini('2024-01-10')); // Wednesday
-          expect(occurrences[8]).toEqual(new UTCDateMini('2024-01-11')); // Thursday
-          expect(occurrences[9]).toEqual(new UTCDateMini('2024-01-12')); // Friday
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-03'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-04'));
+          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-05'));
+          expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-08'));
+          expect(occurrences[6]).toEqual(new UTCDateMini('2024-01-09'));
+          expect(occurrences[7]).toEqual(new UTCDateMini('2024-01-10'));
+          expect(occurrences[8]).toEqual(new UTCDateMini('2024-01-11'));
+          expect(occurrences[9]).toEqual(new UTCDateMini('2024-01-12'));
         });
       });
 
       describe('getNextOccurrence with weekdays', () => {
         it('should get next occurrence on the same weekday', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            weekDays: [1], // Monday
+            weekDays: [1],
           });
 
           const nextOccurrence = rule.getNextOccurrence(
-            new UTCDateMini('2024-01-03'), // Wednesday
+            new UTCDateMini('2024-01-03'),
           );
-          expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-08')); // Next Monday
+          expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-08'));
         });
 
         it('should get next occurrence with multiple weekdays', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            weekDays: [1, 3, 5], // Monday, Wednesday, Friday
+            weekDays: [1, 3, 5],
           });
 
           const nextOccurrence = rule.getNextOccurrence(
-            new UTCDateMini('2024-01-02'), // Tuesday
+            new UTCDateMini('2024-01-02'),
           );
-          expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
+          expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-03'));
         });
 
         it('should get next occurrence when current day is later in week', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            weekDays: [1, 3], // Monday, Wednesday
+            weekDays: [1, 3],
           });
 
           const nextOccurrence = rule.getNextOccurrence(
-            new UTCDateMini('2024-01-04'), // Thursday
+            new UTCDateMini('2024-01-04'),
           );
-          expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-08')); // Next Monday
+          expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-08'));
         });
       });
 
       describe('Intervals with weekdays', () => {
         it('should generate occurrences every 2 weeks on Monday', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
             interval: 2,
-            weekDays: [1], // Monday
+            weekDays: [1],
           });
 
           const range = {
@@ -2377,19 +2323,19 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(4);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-15')); // Monday (2 weeks later)
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-29')); // Monday (2 weeks later)
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-02-12')); // Monday (2 weeks later)
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-15'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-29'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-02-12'));
         });
 
         it('should generate occurrences every 2 weeks on Monday and Wednesday', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
             interval: 2,
-            weekDays: [1, 3], // Monday, Wednesday
+            weekDays: [1, 3],
           });
 
           const range = {
@@ -2400,12 +2346,12 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(6);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-15')); // Monday (2 weeks later)
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-17')); // Wednesday (2 weeks later)
-          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-29')); // Monday (2 weeks later)
-          expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-31')); // Wednesday (2 weeks later)
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-15'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-17'));
+          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-29'));
+          expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-31'));
         });
       });
 
@@ -2417,7 +2363,7 @@ describe('Quickurrence', () => {
             new Quickurrence({
               startDate,
               rule: 'daily',
-              weekDays: [1], // Not allowed for daily
+              weekDays: [1],
             });
           }).toThrow('weekDays option is only valid for weekly recurrence');
         });
@@ -2442,17 +2388,17 @@ describe('Quickurrence', () => {
             new Quickurrence({
               startDate,
               rule: 'weekly',
-              weekDays: [], // Empty array not allowed
+              weekDays: [],
             });
           }).toThrow('weekDays cannot be empty when specified');
         });
 
         it('should handle weekDays in different order', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            weekDays: [5, 1, 3], // Friday, Monday, Wednesday (unsorted)
+            weekDays: [5, 1, 3],
           });
 
           const range = {
@@ -2463,20 +2409,20 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(6);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-05')); // Friday
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-08')); // Monday
-          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-10')); // Wednesday
-          expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-12')); // Friday
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-05'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-08'));
+          expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-10'));
+          expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-12'));
         });
 
         it('should work when start date does not match any weekDay', () => {
-          const startDate = new UTCDateMini('2024-01-02'); // Tuesday
+          const startDate = new UTCDateMini('2024-01-02');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            weekDays: [1, 5], // Monday, Friday (no Tuesday)
+            weekDays: [1, 5],
           });
 
           const range = {
@@ -2487,10 +2433,10 @@ describe('Quickurrence', () => {
           const occurrences = rule.getAllOccurrences(range);
 
           expect(occurrences).toHaveLength(4);
-          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-05')); // Friday (first occurrence)
-          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-08')); // Monday
-          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-12')); // Friday
-          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-15')); // Monday
+          expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-05'));
+          expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-08'));
+          expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-12'));
+          expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-15'));
         });
       });
 
@@ -2529,21 +2475,20 @@ describe('Quickurrence', () => {
 
           const weekDays = rule.getWeekDays();
           if (weekDays) {
-            (weekDays as unknown as number[]).push(0); // Modify returned array
+            (weekDays as unknown as number[]).push(0);
           }
 
           const weekDaysAgain = rule.getWeekDays();
-          expect(weekDaysAgain).toEqual([1, 3, 5]); // Should not be modified
+          expect(weekDaysAgain).toEqual([1, 3, 5]);
         });
       });
 
       describe('Backward compatibility', () => {
         it('should work exactly as before when weekDays is not specified', () => {
-          const startDate = new UTCDateMini('2024-01-01'); // Monday
+          const startDate = new UTCDateMini('2024-01-01');
           const rule = new Quickurrence({
             startDate,
             rule: 'weekly',
-            // No weekDays specified - should behave as before
           });
 
           const range = {
@@ -2574,7 +2519,7 @@ describe('Quickurrence', () => {
 
       const retrievedConfig = rule.getNthWeekdayOfMonth();
       expect(retrievedConfig).toEqual(config);
-      expect(retrievedConfig).not.toBe(config); // Should be a copy
+      expect(retrievedConfig).not.toBe(config);
     });
   });
 
@@ -2590,7 +2535,7 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-12-31'), // Range is much larger than needed
+          end: new UTCDateMini('2024-12-31'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
@@ -2604,7 +2549,7 @@ describe('Quickurrence', () => {
       });
 
       it('should generate exactly N occurrences with weekly recurrence', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
@@ -2613,7 +2558,7 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-12-31'), // Range is much larger than needed
+          end: new UTCDateMini('2024-12-31'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
@@ -2634,7 +2579,7 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-12-31'), // Range is much larger than needed
+          end: new UTCDateMini('2024-12-31'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
@@ -2656,7 +2601,7 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2030-12-31'), // Range is much larger than needed
+          end: new UTCDateMini('2030-12-31'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
@@ -2739,11 +2684,11 @@ describe('Quickurrence', () => {
 
     describe('Count with weekly weekdays', () => {
       it('should generate N occurrences with specific weekdays', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1, 3, 5], // Monday, Wednesday, Friday
+          weekDays: [1, 3, 5],
           count: 8,
         });
 
@@ -2755,23 +2700,23 @@ describe('Quickurrence', () => {
         const occurrences = rule.getAllOccurrences(range);
 
         expect(occurrences).toHaveLength(8);
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-05')); // Friday
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-08')); // Monday
-        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-10')); // Wednesday
-        expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-12')); // Friday
-        expect(occurrences[6]).toEqual(new UTCDateMini('2024-01-15')); // Monday
-        expect(occurrences[7]).toEqual(new UTCDateMini('2024-01-17')); // Wednesday
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-05'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-08'));
+        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-10'));
+        expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-12'));
+        expect(occurrences[6]).toEqual(new UTCDateMini('2024-01-15'));
+        expect(occurrences[7]).toEqual(new UTCDateMini('2024-01-17'));
       });
 
       it('should generate N occurrences with weekdays and interval', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
           interval: 2,
-          weekDays: [1, 5], // Monday, Friday
+          weekDays: [1, 5],
           count: 6,
         });
 
@@ -2783,12 +2728,12 @@ describe('Quickurrence', () => {
         const occurrences = rule.getAllOccurrences(range);
 
         expect(occurrences).toHaveLength(6);
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-05')); // Friday
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-15')); // Monday (2 weeks later)
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-19')); // Friday (2 weeks later)
-        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-29')); // Monday (2 weeks later)
-        expect(occurrences[5]).toEqual(new UTCDateMini('2024-02-02')); // Friday (2 weeks later)
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-05'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-15'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-19'));
+        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-29'));
+        expect(occurrences[5]).toEqual(new UTCDateMini('2024-02-02'));
       });
     });
 
@@ -2836,9 +2781,9 @@ describe('Quickurrence', () => {
 
         expect(occurrences).toHaveLength(4);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-31'));
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-29')); // Last day of Feb
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-29'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-31'));
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-30')); // Last day of Apr
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-30'));
       });
     });
 
@@ -2848,7 +2793,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'monthly',
-          nthWeekdayOfMonth: { weekday: 1, nth: 1 }, // 1st Monday
+          nthWeekdayOfMonth: { weekday: 1, nth: 1 },
           count: 4,
         });
 
@@ -2860,10 +2805,10 @@ describe('Quickurrence', () => {
         const occurrences = rule.getAllOccurrences(range);
 
         expect(occurrences).toHaveLength(4);
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // 1st Monday of Jan
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-05')); // 1st Monday of Feb
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-04')); // 1st Monday of Mar
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-01')); // 1st Monday of Apr
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-05'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-04'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-04-01'));
       });
 
       it('should generate N occurrences on last Friday of each month', () => {
@@ -2871,7 +2816,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'monthly',
-          nthWeekdayOfMonth: { weekday: 5, nth: 'last' }, // Last Friday
+          nthWeekdayOfMonth: { weekday: 5, nth: 'last' },
           count: 3,
         });
 
@@ -2883,9 +2828,9 @@ describe('Quickurrence', () => {
         const occurrences = rule.getAllOccurrences(range);
 
         expect(occurrences).toHaveLength(3);
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-26')); // Last Friday of Jan
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-23')); // Last Friday of Feb
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-29')); // Last Friday of Mar
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-26'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-23'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-03-29'));
       });
     });
 
@@ -2913,36 +2858,36 @@ describe('Quickurrence', () => {
         });
 
         expect(() => {
-          rule.getNextOccurrence(new UTCDateMini('2024-01-03')); // After all 3 occurrences
+          rule.getNextOccurrence(new UTCDateMini('2024-01-03'));
         }).toThrow('No more occurrences within the specified count limit');
       });
 
       it('should work with weekly weekdays and count', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1, 3], // Monday, Wednesday
+          weekDays: [1, 3],
           count: 4,
         });
 
         const nextOccurrence = rule.getNextOccurrence(
           new UTCDateMini('2024-01-02'),
         );
-        expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
+        expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-03'));
       });
 
       it('should throw error with weekly weekdays when beyond count', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1, 3], // Monday, Wednesday
+          weekDays: [1, 3],
           count: 2,
         });
 
         expect(() => {
-          rule.getNextOccurrence(new UTCDateMini('2024-01-03')); // After 2 occurrences
+          rule.getNextOccurrence(new UTCDateMini('2024-01-03'));
         }).toThrow('No more occurrences within the specified count limit');
       });
     });
@@ -2958,12 +2903,12 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-01-10'), // Range allows 10 occurrences
+          end: new UTCDateMini('2024-01-10'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // Should be limited by count
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-03'));
@@ -2979,12 +2924,12 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-01-03'), // Range only allows 3 occurrences
+          end: new UTCDateMini('2024-01-03'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // Should be limited by range
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-03'));
@@ -3092,12 +3037,12 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2030-01-01'), // Only 7 years, less than 50
+          end: new UTCDateMini('2030-01-01'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(7); // Limited by range, not count
+        expect(occurrences).toHaveLength(7);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[6]).toEqual(new UTCDateMini('2030-01-01'));
       });
@@ -3109,7 +3054,6 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          // No count specified - should behave as before
         });
 
         const range = {
@@ -3146,7 +3090,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(4); // Should exclude Jan 3rd and Jan 5th
+        expect(occurrences).toHaveLength(4);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-04'));
@@ -3154,7 +3098,7 @@ describe('Quickurrence', () => {
       });
 
       it('should exclude specific dates from weekly recurrence', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
@@ -3171,7 +3115,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // Should exclude Jan 8th and Jan 22nd
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-15'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-29'));
@@ -3195,7 +3139,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // Should exclude Feb 15th and Apr 15th
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-15'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-03-15'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-05-15'));
@@ -3216,7 +3160,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(2); // Should exclude 2025-03-15
+        expect(occurrences).toHaveLength(2);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-03-15'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2026-03-15'));
       });
@@ -3242,7 +3186,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(4); // Should exclude Jan 5th and Jan 9th
+        expect(occurrences).toHaveLength(4);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-07'));
@@ -3250,7 +3194,7 @@ describe('Quickurrence', () => {
       });
 
       it('should exclude dates from weekly recurrence with interval', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
@@ -3265,7 +3209,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // Should exclude Jan 15th
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-29'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-02-12'));
@@ -3274,11 +3218,11 @@ describe('Quickurrence', () => {
 
     describe('Exclusions with weekly specific weekdays', () => {
       it('should exclude dates from weekly recurrence with specific weekdays', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1, 3, 5], // Monday, Wednesday, Friday
+          weekDays: [1, 3, 5],
           excludeDates: [
             new UTCDateMini('2024-01-03'),
             new UTCDateMini('2024-01-08'),
@@ -3292,11 +3236,11 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(4); // Should exclude Jan 3rd (Wed) and Jan 8th (Mon)
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-05')); // Friday
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-10')); // Wednesday
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-12')); // Friday
+        expect(occurrences).toHaveLength(4);
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-05'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-10'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-12'));
       });
     });
 
@@ -3320,7 +3264,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // Should exclude Feb 15th and Apr 15th
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-15'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-03-15'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-05-15'));
@@ -3333,8 +3277,8 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'monthly',
-          nthWeekdayOfMonth: { weekday: 1, nth: 1 }, // 1st Monday
-          excludeDates: [new UTCDateMini('2024-02-05')], // 1st Monday of Feb
+          nthWeekdayOfMonth: { weekday: 1, nth: 1 },
+          excludeDates: [new UTCDateMini('2024-02-05')],
         });
 
         const range = {
@@ -3344,10 +3288,10 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // Should exclude Feb 5th
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // 1st Monday of Jan
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-03-04')); // 1st Monday of Mar
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-04-01')); // 1st Monday of Apr
+        expect(occurrences).toHaveLength(3);
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-03-04'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-04-01'));
       });
     });
 
@@ -3357,7 +3301,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          count: 5, // Want 5 occurrences
+          count: 5,
           excludeDates: [
             new UTCDateMini('2024-01-02'),
             new UTCDateMini('2024-01-04'),
@@ -3371,10 +3315,10 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(5); // Should still return 5 occurrences
+        expect(occurrences).toHaveLength(5);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03')); // Skip Jan 2nd
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-05')); // Skip Jan 4th
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-05'));
         expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-06'));
         expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-07'));
       });
@@ -3393,12 +3337,12 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-12-31'), // Range is larger than rule end
+          end: new UTCDateMini('2024-12-31'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(4); // Should exclude Jan 3rd and respect endDate
+        expect(occurrences).toHaveLength(4);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-04'));
@@ -3418,17 +3362,15 @@ describe('Quickurrence', () => {
           ],
         });
 
-        // First, check that the start date is returned if it's not excluded
         const firstOccurrence = rule.getNextOccurrence(
           new UTCDateMini('2023-12-31'),
         );
         expect(firstOccurrence).toEqual(new UTCDateMini('2024-01-01'));
 
-        // Then check that it skips excluded dates when looking for the next one
         const nextOccurrence = rule.getNextOccurrence(
           new UTCDateMini('2024-01-01'),
         );
-        expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-04')); // Should skip Jan 2nd and 3rd
+        expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-04'));
       });
 
       it('should handle exclusions with count in getNextOccurrence', () => {
@@ -3448,14 +3390,13 @@ describe('Quickurrence', () => {
         const nextOccurrence2 = rule.getNextOccurrence(
           new UTCDateMini('2024-01-01'),
         );
-        expect(nextOccurrence2).toEqual(new UTCDateMini('2024-01-03')); // Skip Jan 2nd
+        expect(nextOccurrence2).toEqual(new UTCDateMini('2024-01-03'));
 
         const nextOccurrence3 = rule.getNextOccurrence(
           new UTCDateMini('2024-01-03'),
         );
         expect(nextOccurrence3).toEqual(new UTCDateMini('2024-01-04'));
 
-        // Should throw error when trying to get more than count limit
         expect(() => {
           rule.getNextOccurrence(new UTCDateMini('2024-01-04'));
         }).toThrow('No more occurrences within the specified count limit');
@@ -3481,7 +3422,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'daily',
           timezone: 'UTC',
-          excludeDates: [new Date('2024-01-02T15:30:00Z')], // Should be normalized to start of day
+          excludeDates: [new Date('2024-01-02T15:30:00Z')],
         });
 
         const range = {
@@ -3491,7 +3432,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // Should exclude Jan 2nd
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-04'));
@@ -3502,7 +3443,6 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          // No excludeDates specified
         });
 
         const range = {
@@ -3523,7 +3463,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          excludeDates: [startDate], // Exclude the start date itself
+          excludeDates: [startDate],
         });
 
         const range = {
@@ -3533,7 +3473,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // Should exclude Jan 1st
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-02'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-04'));
@@ -3586,11 +3526,11 @@ describe('Quickurrence', () => {
 
         const excludeDates = rule.getExcludeDates();
         if (excludeDates) {
-          excludeDates.push(new UTCDateMini('2024-01-05')); // Modify returned array
+          excludeDates.push(new UTCDateMini('2024-01-05'));
         }
 
         const excludeDatesAgain = rule.getExcludeDates();
-        expect(excludeDatesAgain).toHaveLength(1); // Should not be modified
+        expect(excludeDatesAgain).toHaveLength(1);
         expect(excludeDatesAgain![0]).toEqual(new UTCDateMini('2024-01-03'));
       });
     });
@@ -3601,7 +3541,6 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          // No excludeDates specified - should behave as before
         });
 
         const range = {
@@ -3665,7 +3604,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          condition: (date) => date.getDate() % 2 === 1, // Only odd days
+          condition: (date) => date.getDate() % 2 === 1,
         });
 
         const range = {
@@ -3675,19 +3614,19 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // 1st, 3rd, 5th
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-05'));
       });
 
       it('should work with weekly recurrence and weekday conditions', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1, 3, 5], // Monday, Wednesday, Friday
-          condition: (date) => date.getDate() <= 15, // Only first half of month
+          weekDays: [1, 3, 5],
+          condition: (date) => date.getDate() <= 15,
         });
 
         const range = {
@@ -3698,7 +3637,6 @@ describe('Quickurrence', () => {
         const occurrences = rule.getAllOccurrences(range);
 
         expect(occurrences.length).toBeGreaterThan(0);
-        // All occurrences should be in first half of month
         occurrences.forEach((occurrence) => {
           expect(occurrence.getDate()).toBeLessThanOrEqual(15);
         });
@@ -3710,7 +3648,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'monthly',
           monthDay: 15,
-          condition: (date) => date.getMonth() % 2 === 0, // Only even months (0, 2, 4...)
+          condition: (date) => date.getMonth() % 2 === 0,
         });
 
         const range = {
@@ -3720,7 +3658,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // Jan, Mar, May (months 0, 2, 4)
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-15'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-03-15'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-05-15'));
@@ -3731,7 +3669,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'yearly',
-          condition: (date) => date.getFullYear() % 2 === 0, // Only even years
+          condition: (date) => date.getFullYear() % 2 === 0,
         });
 
         const range = {
@@ -3741,7 +3679,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(2); // 2024, 2026
+        expect(occurrences).toHaveLength(2);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-03-15'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2026-03-15'));
       });
@@ -3756,7 +3694,6 @@ describe('Quickurrence', () => {
           timezone: 'America/New_York',
           condition: (date) => {
             receivedDates.push(new Date(date));
-            // Verify the date is normalized to start of day
             expect(date.getHours()).toBe(0);
             expect(date.getMinutes()).toBe(0);
             expect(date.getSeconds()).toBe(0);
@@ -3782,8 +3719,8 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          excludeDates: [new UTCDateMini('2024-01-02')], // Exclude Jan 2nd
-          condition: (date) => date.getDate() % 2 === 1, // Only odd days
+          excludeDates: [new UTCDateMini('2024-01-02')],
+          condition: (date) => date.getDate() % 2 === 1,
         });
 
         const range = {
@@ -3793,7 +3730,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // 1st, 3rd, 5th (2nd excluded, 4th, 6th fail condition)
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-05'));
@@ -3805,7 +3742,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'daily',
           count: 3,
-          condition: (date) => date.getDate() % 2 === 1, // Only odd days
+          condition: (date) => date.getDate() % 2 === 1,
         });
 
         const range = {
@@ -3815,7 +3752,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // Should find exactly 3 odd days
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-05'));
@@ -3828,17 +3765,17 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'daily',
           endDate,
-          condition: (date) => date.getDate() % 2 === 1, // Only odd days
+          condition: (date) => date.getDate() % 2 === 1,
         });
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-12-31'), // Range is larger than rule end
+          end: new UTCDateMini('2024-12-31'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // 1st, 3rd, 5th within endDate
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-03'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-05'));
@@ -3849,8 +3786,8 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          interval: 2, // Every 2 days
-          condition: (date) => date.getDay() !== 0, // Not Sunday
+          interval: 2,
+          condition: (date) => date.getDay() !== 0,
         });
 
         const range = {
@@ -3860,10 +3797,9 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        // Should include dates that are every 2 days AND not Sunday
         expect(occurrences.length).toBeGreaterThan(0);
         occurrences.forEach((occurrence) => {
-          expect(occurrence.getDay()).not.toBe(0); // Not Sunday
+          expect(occurrence.getDay()).not.toBe(0);
         });
       });
     });
@@ -3874,16 +3810,14 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          condition: (date) => date.getDate() % 2 === 1, // Only odd days
+          condition: (date) => date.getDate() % 2 === 1,
         });
 
-        // First occurrence should be Jan 1st (odd day)
         const firstOccurrence = rule.getNextOccurrence(
           new UTCDateMini('2023-12-31'),
         );
         expect(firstOccurrence).toEqual(new UTCDateMini('2024-01-01'));
 
-        // Next occurrence after Jan 1st should be Jan 3rd (skipping Jan 2nd)
         const nextOccurrence = rule.getNextOccurrence(
           new UTCDateMini('2024-01-01'),
         );
@@ -3896,7 +3830,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'daily',
           count: 2,
-          condition: (date) => date.getDate() % 2 === 1, // Only odd days
+          condition: (date) => date.getDate() % 2 === 1,
         });
 
         const firstOccurrence = rule.getNextOccurrence(
@@ -3909,7 +3843,6 @@ describe('Quickurrence', () => {
         );
         expect(secondOccurrence).toEqual(new UTCDateMini('2024-01-03'));
 
-        // Should throw error when trying to get more than count limit
         expect(() => {
           rule.getNextOccurrence(new UTCDateMini('2024-01-03'));
         }).toThrow('No more occurrences within the specified count limit');
@@ -3922,7 +3855,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'daily',
           endDate,
-          condition: (date) => date.getDate() > 5, // No dates in range meet condition
+          condition: (date) => date.getDate() > 5,
         });
 
         expect(() => {
@@ -3933,18 +3866,17 @@ describe('Quickurrence', () => {
 
     describe('Complex condition scenarios', () => {
       it('should handle holiday exclusion example', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const holidays = [
-          new UTCDateMini('2024-01-01'), // New Year's Day
-          new UTCDateMini('2024-01-15'), // MLK Day
+          new UTCDateMini('2024-01-01'),
+          new UTCDateMini('2024-01-15'),
         ];
 
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1], // Every Monday
+          weekDays: [1],
           condition: (date) => {
-            // Not a holiday
             return !holidays.some(
               (holiday) => holiday.getTime() === date.getTime(),
             );
@@ -3958,7 +3890,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(2); // Jan 8 and Jan 22 (excluding Jan 1 and Jan 15)
+        expect(occurrences).toHaveLength(2);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-08'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-22'));
       });
@@ -3970,7 +3902,7 @@ describe('Quickurrence', () => {
           rule: 'daily',
           condition: (date) => {
             const day = date.getDay();
-            return day !== 0 && day !== 6; // Monday-Friday only
+            return day !== 0 && day !== 6;
           },
         });
 
@@ -3981,12 +3913,11 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        // Should only include weekdays
-        expect(occurrences).toHaveLength(10); // 10 business days in 2 weeks
+        expect(occurrences).toHaveLength(10);
         occurrences.forEach((occurrence) => {
           const day = occurrence.getDay();
-          expect(day).not.toBe(0); // Not Sunday
-          expect(day).not.toBe(6); // Not Saturday
+          expect(day).not.toBe(0);
+          expect(day).not.toBe(6);
         });
       });
 
@@ -3998,7 +3929,7 @@ describe('Quickurrence', () => {
           monthDay: 1,
           condition: (date) => {
             const month = date.getMonth();
-            return month >= 5 && month <= 7; // Summer months (June, July, August)
+            return month >= 5 && month <= 7;
           },
         });
 
@@ -4009,7 +3940,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(3); // June 1, July 1, August 1
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-06-01'));
         expect(occurrences[1]).toEqual(new UTCDateMini('2024-07-01'));
         expect(occurrences[2]).toEqual(new UTCDateMini('2024-08-01'));
@@ -4060,7 +3991,6 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          // No condition specified - should behave as before
         });
 
         const range = {
@@ -4080,7 +4010,7 @@ describe('Quickurrence', () => {
   describe('Preset functionality', () => {
     describe('Business days preset', () => {
       it('should include only business days (Monday-Friday)', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
@@ -4089,29 +4019,28 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-01-14'), // Two weeks
+          end: new UTCDateMini('2024-01-14'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(10); // 10 business days in 2 weeks
+        expect(occurrences).toHaveLength(10);
         occurrences.forEach((occurrence) => {
           const day = occurrence.getDay();
-          expect(day).toBeGreaterThanOrEqual(1); // Monday or later
-          expect(day).toBeLessThanOrEqual(5); // Friday or earlier
+          expect(day).toBeGreaterThanOrEqual(1);
+          expect(day).toBeLessThanOrEqual(5);
         });
 
-        // Check specific dates
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02')); // Tuesday
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-04')); // Thursday
-        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-05')); // Friday
-        expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-08')); // Monday (skip weekend)
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-03'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-04'));
+        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-05'));
+        expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-08'));
       });
 
       it('should work with weekly recurrence and business days preset', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
@@ -4127,22 +4056,21 @@ describe('Quickurrence', () => {
 
         // Business days preset means Monday-Friday every week, so 21 business days in Jan 2024
         expect(occurrences).toHaveLength(21);
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02')); // Tuesday
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-04')); // Thursday
-        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-05')); // Friday
-        expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-08')); // Monday (next week)
-        // Verify no weekends are included
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-03'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-04'));
+        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-05'));
+        expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-08'));
         occurrences.forEach((occurrence) => {
           const day = occurrence.getDay();
-          expect(day).toBeGreaterThanOrEqual(1); // Monday or later
-          expect(day).toBeLessThanOrEqual(5); // Friday or earlier
+          expect(day).toBeGreaterThanOrEqual(1);
+          expect(day).toBeLessThanOrEqual(5);
         });
       });
 
       it('should exclude weekends when starting on a weekend', () => {
-        const startDate = new UTCDateMini('2024-01-06'); // Saturday
+        const startDate = new UTCDateMini('2024-01-06');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
@@ -4156,13 +4084,13 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(5); // Monday-Friday only
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-08')); // Monday (first business day)
-        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-12')); // Friday
+        expect(occurrences).toHaveLength(5);
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-08'));
+        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-12'));
       });
 
       it('should work with count limit and business days', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
@@ -4177,20 +4105,20 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(5); // Exactly 5 business days
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02')); // Tuesday
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-04')); // Thursday
-        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-05')); // Friday
+        expect(occurrences).toHaveLength(5);
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-03'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-04'));
+        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-05'));
       });
 
       it('should work with intervals and business days', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          interval: 2, // Every 2 days
+          interval: 2,
           preset: 'businessDays',
         });
 
@@ -4201,19 +4129,18 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        // Should include dates that are every 2 days AND business days
         expect(occurrences.length).toBeGreaterThan(0);
         occurrences.forEach((occurrence) => {
           const day = occurrence.getDay();
-          expect(day).toBeGreaterThanOrEqual(1); // Monday or later
-          expect(day).toBeLessThanOrEqual(5); // Friday or earlier
+          expect(day).toBeGreaterThanOrEqual(1);
+          expect(day).toBeLessThanOrEqual(5);
         });
       });
     });
 
     describe('Weekends preset', () => {
       it('should include only weekends (Saturday and Sunday)', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
@@ -4227,21 +4154,20 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(6); // 3 weekends = 6 days
+        expect(occurrences).toHaveLength(6);
         occurrences.forEach((occurrence) => {
           const day = occurrence.getDay();
-          expect(day === 0 || day === 6).toBe(true); // Sunday (0) or Saturday (6)
+          expect(day === 0 || day === 6).toBe(true);
         });
 
-        // Check specific dates
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-06')); // Saturday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-07')); // Sunday
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-13')); // Saturday
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-14')); // Sunday
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-06'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-07'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-13'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-14'));
       });
 
       it('should work with weekly recurrence and weekends preset', () => {
-        const startDate = new UTCDateMini('2024-01-06'); // Saturday
+        const startDate = new UTCDateMini('2024-01-06');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
@@ -4257,24 +4183,23 @@ describe('Quickurrence', () => {
 
         // Weekends preset means Saturday AND Sunday every week, so 9 weekend days total
         expect(occurrences).toHaveLength(9);
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-06')); // Saturday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-07')); // Sunday
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-13')); // Saturday
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-14')); // Sunday
-        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-20')); // Saturday
-        expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-21')); // Sunday
-        expect(occurrences[6]).toEqual(new UTCDateMini('2024-01-27')); // Saturday
-        expect(occurrences[7]).toEqual(new UTCDateMini('2024-01-28')); // Sunday
-        expect(occurrences[8]).toEqual(new UTCDateMini('2024-02-03')); // Saturday
-        // Verify only weekends are included
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-06'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-07'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-13'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-14'));
+        expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-20'));
+        expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-21'));
+        expect(occurrences[6]).toEqual(new UTCDateMini('2024-01-27'));
+        expect(occurrences[7]).toEqual(new UTCDateMini('2024-01-28'));
+        expect(occurrences[8]).toEqual(new UTCDateMini('2024-02-03'));
         occurrences.forEach((occurrence) => {
           const day = occurrence.getDay();
-          expect(day === 0 || day === 6).toBe(true); // Sunday (0) or Saturday (6)
+          expect(day === 0 || day === 6).toBe(true);
         });
       });
 
       it('should exclude weekdays when starting on a weekday', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
@@ -4288,13 +4213,13 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(2); // Only Saturday and Sunday
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-06')); // Saturday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-07')); // Sunday
+        expect(occurrences).toHaveLength(2);
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-06'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-07'));
       });
 
       it('should work with count limit and weekends', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
@@ -4309,59 +4234,55 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(4); // Exactly 4 weekend days
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-06')); // Saturday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-07')); // Sunday
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-13')); // Saturday
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-14')); // Sunday
+        expect(occurrences).toHaveLength(4);
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-06'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-07'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-13'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-14'));
       });
     });
 
     describe('getNextOccurrence with presets', () => {
       it('should get next business day occurrence', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
           preset: 'businessDays',
         });
 
-        // From Thursday, next should be Friday
         const nextOccurrence = rule.getNextOccurrence(
           new UTCDateMini('2024-01-04'),
         );
-        expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-05')); // Friday
+        expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-05'));
 
-        // From Friday, next should be Monday (skip weekend)
         const nextAfterFriday = rule.getNextOccurrence(
           new UTCDateMini('2024-01-05'),
         );
-        expect(nextAfterFriday).toEqual(new UTCDateMini('2024-01-08')); // Monday
+        expect(nextAfterFriday).toEqual(new UTCDateMini('2024-01-08'));
       });
 
       it('should get next weekend occurrence', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
           preset: 'weekends',
         });
 
-        // From Wednesday, next should be Saturday
         const nextOccurrence = rule.getNextOccurrence(
           new UTCDateMini('2024-01-03'),
         );
-        expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-06')); // Saturday
+        expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-06'));
 
-        // From Saturday, next should be Sunday
         const nextAfterSaturday = rule.getNextOccurrence(
           new UTCDateMini('2024-01-06'),
         );
-        expect(nextAfterSaturday).toEqual(new UTCDateMini('2024-01-07')); // Sunday
+        expect(nextAfterSaturday).toEqual(new UTCDateMini('2024-01-07'));
       });
 
       it('should work with count limits and business days', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
@@ -4372,19 +4293,18 @@ describe('Quickurrence', () => {
         const firstOccurrence = rule.getNextOccurrence(
           new UTCDateMini('2023-12-31'),
         );
-        expect(firstOccurrence).toEqual(new UTCDateMini('2024-01-01')); // Monday
+        expect(firstOccurrence).toEqual(new UTCDateMini('2024-01-01'));
 
         const secondOccurrence = rule.getNextOccurrence(
           new UTCDateMini('2024-01-01'),
         );
-        expect(secondOccurrence).toEqual(new UTCDateMini('2024-01-02')); // Tuesday
+        expect(secondOccurrence).toEqual(new UTCDateMini('2024-01-02'));
 
         const thirdOccurrence = rule.getNextOccurrence(
           new UTCDateMini('2024-01-02'),
         );
-        expect(thirdOccurrence).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
+        expect(thirdOccurrence).toEqual(new UTCDateMini('2024-01-03'));
 
-        // Should throw error when trying to get more than count limit
         expect(() => {
           rule.getNextOccurrence(new UTCDateMini('2024-01-03'));
         }).toThrow('No more occurrences within the specified count limit');
@@ -4393,14 +4313,14 @@ describe('Quickurrence', () => {
 
     describe('Preset with other features', () => {
       it('should work with excludeDates and business days preset', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
           preset: 'businessDays',
           excludeDates: [
-            new UTCDateMini('2024-01-03'), // Wednesday
-            new UTCDateMini('2024-01-05'), // Friday
+            new UTCDateMini('2024-01-03'),
+            new UTCDateMini('2024-01-05'),
           ],
         });
 
@@ -4411,11 +4331,11 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(8); // 10 business days - 2 excluded
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02')); // Tuesday
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-04')); // Thursday (skip Wed)
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-08')); // Monday (skip Fri and weekend)
+        expect(occurrences).toHaveLength(8);
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-04'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-08'));
       });
 
       it('should work with endDate and weekends preset', () => {
@@ -4430,20 +4350,20 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-12-31'), // Range is larger than rule end
+          end: new UTCDateMini('2024-12-31'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(4); // 2 weekends within endDate
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-06')); // Saturday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-07')); // Sunday
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-13')); // Saturday
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-14')); // Sunday
+        expect(occurrences).toHaveLength(4);
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-06'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-07'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-01-13'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-01-14'));
       });
 
       it('should work with monthly recurrence and business days preset', () => {
-        const startDate = new UTCDateMini('2024-01-15'); // Monday
+        const startDate = new UTCDateMini('2024-01-15');
         const rule = new Quickurrence({
           startDate,
           rule: 'monthly',
@@ -4457,12 +4377,11 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        // Should include monthly occurrences that fall on business days
         expect(occurrences.length).toBeGreaterThan(0);
         occurrences.forEach((occurrence) => {
           const day = occurrence.getDay();
-          expect(day).toBeGreaterThanOrEqual(1); // Monday or later
-          expect(day).toBeLessThanOrEqual(5); // Friday or earlier
+          expect(day).toBeGreaterThanOrEqual(1);
+          expect(day).toBeLessThanOrEqual(5);
         });
       });
     });
@@ -4486,7 +4405,6 @@ describe('Quickurrence', () => {
       it('should create rule successfully with valid presets', () => {
         const startDate = new UTCDateMini('2024-01-01');
 
-        // Should create successfully with businessDays preset
         expect(() => {
           new Quickurrence({
             startDate,
@@ -4495,7 +4413,6 @@ describe('Quickurrence', () => {
           });
         }).not.toThrow();
 
-        // Should create successfully with weekends preset
         expect(() => {
           new Quickurrence({
             startDate,
@@ -4543,13 +4460,13 @@ describe('Quickurrence', () => {
 
         // Presets now set rule configurations instead of condition functions
         expect(rule.getRule()).toBe('weekly');
-        expect(rule.getWeekDays()).toEqual([1, 2, 3, 4, 5]); // Monday through Friday
+        expect(rule.getWeekDays()).toEqual([1, 2, 3, 4, 5]);
       });
     });
 
     describe('Edge cases', () => {
       it('should handle business days across month boundaries', () => {
-        const startDate = new UTCDateMini('2024-01-30'); // Tuesday
+        const startDate = new UTCDateMini('2024-01-30');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
@@ -4563,16 +4480,16 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(5); // Tue, Wed, Thu, Fri, Mon
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-30')); // Tuesday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-31')); // Wednesday
-        expect(occurrences[2]).toEqual(new UTCDateMini('2024-02-01')); // Thursday
-        expect(occurrences[3]).toEqual(new UTCDateMini('2024-02-02')); // Friday
-        expect(occurrences[4]).toEqual(new UTCDateMini('2024-02-05')); // Monday (skip weekend)
+        expect(occurrences).toHaveLength(5);
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-30'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-31'));
+        expect(occurrences[2]).toEqual(new UTCDateMini('2024-02-01'));
+        expect(occurrences[3]).toEqual(new UTCDateMini('2024-02-02'));
+        expect(occurrences[4]).toEqual(new UTCDateMini('2024-02-05'));
       });
 
       it('should handle weekends across month boundaries', () => {
-        const startDate = new UTCDateMini('2024-01-30'); // Tuesday
+        const startDate = new UTCDateMini('2024-01-30');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
@@ -4586,13 +4503,13 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(2); // 1 Saturday + 1 Sunday in range
-        expect(occurrences[0]).toEqual(new UTCDateMini('2024-02-03')); // Saturday
-        expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-04')); // Sunday
+        expect(occurrences).toHaveLength(2);
+        expect(occurrences[0]).toEqual(new UTCDateMini('2024-02-03'));
+        expect(occurrences[1]).toEqual(new UTCDateMini('2024-02-04'));
       });
 
       it('should work with business days preset when no business days exist in range', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
@@ -4600,13 +4517,13 @@ describe('Quickurrence', () => {
         });
 
         const range = {
-          start: new UTCDateMini('2024-01-06'), // Saturday
-          end: new UTCDateMini('2024-01-07'), // Sunday
+          start: new UTCDateMini('2024-01-06'),
+          end: new UTCDateMini('2024-01-07'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(0); // No business days in weekend range
+        expect(occurrences).toHaveLength(0);
       });
     });
 
@@ -4616,7 +4533,6 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          // No preset specified - should behave as before
         });
 
         const range = {
@@ -4626,7 +4542,7 @@ describe('Quickurrence', () => {
 
         const occurrences = rule.getAllOccurrences(range);
 
-        expect(occurrences).toHaveLength(7); // All 7 days including weekends
+        expect(occurrences).toHaveLength(7);
         expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01'));
         expect(occurrences[6]).toEqual(new UTCDateMini('2024-01-07'));
       });
@@ -4736,7 +4652,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1], // Monday
+          weekDays: [1],
         });
 
         const text = rule.toHumanText();
@@ -4748,7 +4664,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1, 3, 5], // Monday, Wednesday, Friday
+          weekDays: [1, 3, 5],
         });
 
         const text = rule.toHumanText();
@@ -4760,7 +4676,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [0, 6], // Sunday, Saturday
+          weekDays: [0, 6],
         });
 
         const text = rule.toHumanText();
@@ -4773,7 +4689,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'weekly',
           interval: 2,
-          weekDays: [2, 4], // Tuesday, Thursday
+          weekDays: [2, 4],
         });
 
         const text = rule.toHumanText();
@@ -5142,7 +5058,6 @@ describe('Quickurrence', () => {
         });
 
         const text = rule.toHumanText();
-        // This should work normally - the error handling is tested internally
         expect(text).toBe('Daily');
       });
     });
@@ -5440,7 +5355,7 @@ describe('Quickurrence', () => {
         expect(updatedOptions!.interval).toBe(3);
         expect(updatedOptions!.weekDays).toEqual([2, 4, 6]);
         expect(updatedOptions!.count).toBe(10);
-        expect(updatedOptions!.rule).toBe('weekly'); // Should keep existing rule
+        expect(updatedOptions!.rule).toBe('weekly');
       });
     });
 
@@ -5535,11 +5450,11 @@ describe('Quickurrence', () => {
 
         // The update method filters out invalid count values (< 1)
         const updatedOptions = Quickurrence.update(originalOptions, {
-          count: -1, // Invalid count should be filtered out
+          count: -1,
         });
 
         expect(updatedOptions).toBeDefined();
-        expect(updatedOptions!.count).toBeUndefined(); // Should be filtered out
+        expect(updatedOptions!.count).toBeUndefined();
       });
 
       it('should clean incompatible options when updating', () => {
@@ -5551,14 +5466,13 @@ describe('Quickurrence', () => {
 
         // The update method should clean incompatible options
         const updatedOptions = Quickurrence.update(originalOptions, {
-          weekDays: [1, 2, 3] as WeekDay[], // weekDays only valid for weekly, should be cleaned
+          weekDays: [1, 2, 3] as WeekDay[],
         });
 
         expect(updatedOptions).toBeDefined();
-        expect(updatedOptions!.weekDays).toBeUndefined(); // Should be cleaned out
+        expect(updatedOptions!.weekDays).toBeUndefined();
         expect(updatedOptions!.rule).toBe('daily');
 
-        // Should be able to create Quickurrence instance without errors
         expect(() => {
           if (updatedOptions) {
             new Quickurrence(updatedOptions);
@@ -5647,7 +5561,7 @@ describe('Quickurrence', () => {
         const options: QuickurrenceOptions = {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          weekDays: [1, 2, 3, 4, 5] as WeekDay[], // Monday-Friday
+          weekDays: [1, 2, 3, 4, 5] as WeekDay[],
         };
 
         const matchingPreset = Quickurrence.getMatchingPreset(options);
@@ -5658,7 +5572,7 @@ describe('Quickurrence', () => {
         const options: QuickurrenceOptions = {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          weekDays: [5, 1, 3, 2, 4] as WeekDay[], // Friday, Monday, Wednesday, Tuesday, Thursday (unsorted)
+          weekDays: [5, 1, 3, 2, 4] as WeekDay[],
         };
 
         const matchingPreset = Quickurrence.getMatchingPreset(options);
@@ -5669,7 +5583,7 @@ describe('Quickurrence', () => {
         const options: QuickurrenceOptions = {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          weekDays: [1, 2, 3] as WeekDay[], // Only Mon-Wed
+          weekDays: [1, 2, 3] as WeekDay[],
         };
 
         const matchingPreset = Quickurrence.getMatchingPreset(options);
@@ -5680,7 +5594,7 @@ describe('Quickurrence', () => {
         const options: QuickurrenceOptions = {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          weekDays: [0, 1, 2, 3, 4, 5, 6] as WeekDay[], // All days
+          weekDays: [0, 1, 2, 3, 4, 5, 6] as WeekDay[],
         };
 
         const matchingPreset = Quickurrence.getMatchingPreset(options);
@@ -5693,7 +5607,7 @@ describe('Quickurrence', () => {
         const options: QuickurrenceOptions = {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          weekDays: [0, 6] as WeekDay[], // Sunday, Saturday
+          weekDays: [0, 6] as WeekDay[],
         };
 
         const matchingPreset = Quickurrence.getMatchingPreset(options);
@@ -5704,7 +5618,7 @@ describe('Quickurrence', () => {
         const options: QuickurrenceOptions = {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          weekDays: [6, 0] as WeekDay[], // Saturday, Sunday (unsorted)
+          weekDays: [6, 0] as WeekDay[],
         };
 
         const matchingPreset = Quickurrence.getMatchingPreset(options);
@@ -5715,7 +5629,7 @@ describe('Quickurrence', () => {
         const options: QuickurrenceOptions = {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          weekDays: [6] as WeekDay[], // Only Saturday
+          weekDays: [6] as WeekDay[],
         };
 
         const matchingPreset = Quickurrence.getMatchingPreset(options);
@@ -5726,7 +5640,7 @@ describe('Quickurrence', () => {
         const options: QuickurrenceOptions = {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          weekDays: [0, 1, 6] as WeekDay[], // Sunday, Monday, Saturday
+          weekDays: [0, 1, 6] as WeekDay[],
         };
 
         const matchingPreset = Quickurrence.getMatchingPreset(options);
@@ -5769,7 +5683,6 @@ describe('Quickurrence', () => {
         const options: QuickurrenceOptions = {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          // No weekDays specified
         };
 
         const matchingPreset = Quickurrence.getMatchingPreset(options);
@@ -5791,7 +5704,7 @@ describe('Quickurrence', () => {
         const options: QuickurrenceOptions = {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          weekDays: [1, 3, 5] as WeekDay[], // Monday, Wednesday, Friday only
+          weekDays: [1, 3, 5] as WeekDay[],
         };
 
         const matchingPreset = Quickurrence.getMatchingPreset(options);
@@ -5843,7 +5756,7 @@ describe('Quickurrence', () => {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
           weekDays: [1, 2, 3, 4, 5] as WeekDay[],
-          weekStartsOn: 0, // Sunday
+          weekStartsOn: 0,
           interval: 3,
           count: 5,
         };
@@ -5888,7 +5801,6 @@ describe('Quickurrence', () => {
       });
 
       it('should not detect preset when configuration differs from preset-created config', () => {
-        // Start with business days preset, then modify
         const rule = new Quickurrence({
           startDate: new UTCDateMini('2024-01-01'),
           preset: 'businessDays',
@@ -5896,7 +5808,7 @@ describe('Quickurrence', () => {
 
         const modifiedOptions: QuickurrenceOptions = {
           ...rule.getOptions(),
-          weekDays: [1, 2, 3] as WeekDay[], // Only Mon-Wed (not full business days)
+          weekDays: [1, 2, 3] as WeekDay[],
         };
 
         const matchingPreset = Quickurrence.getMatchingPreset(modifiedOptions);
@@ -5913,17 +5825,16 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'weekly',
           timezone: 'Europe/Warsaw',
-          weekDays: [1, 2, 3, 4, 5], // Monday through Friday
+          weekDays: [1, 2, 3, 4, 5],
           preset: 'businessDays',
         });
 
-        // When asking for the next occurrence after the start date
         const nextOccurrence = rule.getNextOccurrence(startDate);
 
         // Should return Wednesday (next business day), not the same date
         const expectedDate = new Date('2025-09-17T22:00:00.000Z'); // Wednesday at 22:00 UTC
         expect(nextOccurrence).toEqual(expectedDate);
-        expect(nextOccurrence.getTime()).not.toBe(startDate.getTime()); // Should not be the same date
+        expect(nextOccurrence.getTime()).not.toBe(startDate.getTime());
       });
 
       it('should handle business days correctly when start date is on a business day', () => {
@@ -5932,15 +5843,13 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'weekly',
           timezone: 'Europe/Warsaw',
-          weekDays: [1, 2, 3, 4, 5], // Monday through Friday
+          weekDays: [1, 2, 3, 4, 5],
           preset: 'businessDays',
         });
 
-        // When the current date is slightly after the start date
         const afterStartDate = new Date('2025-09-16T22:00:01.000Z'); // 1 second after start
         const nextOccurrence = rule.getNextOccurrence(afterStartDate);
 
-        // Should return next business day (Wednesday)
         const expectedDate = new Date('2025-09-17T22:00:00.000Z');
         expect(nextOccurrence).toEqual(expectedDate);
       });
@@ -5951,30 +5860,28 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'weekly',
           timezone: 'Europe/Warsaw',
-          weekDays: [1, 2, 3, 4, 5], // Monday through Friday
+          weekDays: [1, 2, 3, 4, 5],
           preset: 'businessDays',
         });
 
         // Verify that the start date is correctly identified as Tuesday (day 2)
         // in UTC (the comment above marks 22:00 UTC = Tuesday).
         const dayOfWeek = startDate.getUTCDay();
-        expect(dayOfWeek).toBe(2); // Tuesday
+        expect(dayOfWeek).toBe(2);
 
-        // Verify that Tuesday is included in weekDays
         const weekDays = rule.getWeekDays();
         expect(weekDays).toContain(2);
 
-        // Get occurrences to verify the pattern
         const range = {
           start: startDate,
           end: new Date('2025-09-21T21:59:00.000Z'), // Sunday 23:59 Europe/Warsaw time
         };
 
         const occurrences = rule.getAllOccurrences(range);
-        expect(occurrences).toHaveLength(3); // Wed, Thu, Fri
+        expect(occurrences).toHaveLength(3);
         expect(occurrences[0]).toEqual(new Date('2025-09-16T22:00:00.000Z')); // Wednesday (start date)
-        expect(occurrences[1]).toEqual(new Date('2025-09-17T22:00:00.000Z')); // Thursday
-        expect(occurrences[2]).toEqual(new Date('2025-09-18T22:00:00.000Z')); // Friday
+        expect(occurrences[1]).toEqual(new Date('2025-09-17T22:00:00.000Z'));
+        expect(occurrences[2]).toEqual(new Date('2025-09-18T22:00:00.000Z'));
       });
     });
   });
@@ -5982,60 +5889,56 @@ describe('Quickurrence', () => {
   describe('Weekdays preset bug reproduction', () => {
     describe('Task completion scenario', () => {
       it('should maintain weekdays-only pattern after task completion simulation', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1, 2, 3, 4, 5], // Monday through Friday (weekdays preset)
+          weekDays: [1, 2, 3, 4, 5],
         });
 
-        // Simulate completing a task on Wednesday and getting next occurrence
         const nextAfterWednesday = rule.getNextOccurrence(
-          new UTCDateMini('2024-01-03'), // Wednesday
+          new UTCDateMini('2024-01-03'),
         );
 
         // Should be Thursday (next weekday), not Saturday or Sunday
-        expect(nextAfterWednesday).toEqual(new UTCDateMini('2024-01-04')); // Thursday
+        expect(nextAfterWednesday).toEqual(new UTCDateMini('2024-01-04'));
 
-        // Simulate completing Friday task, should skip weekend
         const nextAfterFriday = rule.getNextOccurrence(
-          new UTCDateMini('2024-01-05'), // Friday
+          new UTCDateMini('2024-01-05'),
         );
 
         // Should be Monday (skip weekend), not Saturday
-        expect(nextAfterFriday).toEqual(new UTCDateMini('2024-01-08')); // Monday
+        expect(nextAfterFriday).toEqual(new UTCDateMini('2024-01-08'));
       });
 
       it('should never include weekends when weekdays preset is used', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1, 2, 3, 4, 5], // Monday through Friday only
+          weekDays: [1, 2, 3, 4, 5],
         });
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-01-21'), // 3 weeks
+          end: new UTCDateMini('2024-01-21'),
         };
 
         const occurrences = rule.getAllOccurrences(range);
 
-        // Verify no weekends are included
         occurrences.forEach((occurrence) => {
           const dayOfWeek = occurrence.getDay();
-          expect(dayOfWeek).not.toBe(0); // Not Sunday
-          expect(dayOfWeek).not.toBe(6); // Not Saturday
-          expect(dayOfWeek).toBeGreaterThanOrEqual(1); // Monday or later
-          expect(dayOfWeek).toBeLessThanOrEqual(5); // Friday or earlier
+          expect(dayOfWeek).not.toBe(0);
+          expect(dayOfWeek).not.toBe(6);
+          expect(dayOfWeek).toBeGreaterThanOrEqual(1);
+          expect(dayOfWeek).toBeLessThanOrEqual(5);
         });
 
-        // Should be exactly 15 occurrences (3 weeks × 5 weekdays)
         expect(occurrences).toHaveLength(15);
       });
 
       it('should detect bug when weekDays accidentally includes all 7 days', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
 
         // This would be the buggy behavior - all 7 days instead of just weekdays
         const buggyRule = new Quickurrence({
@@ -6046,7 +5949,7 @@ describe('Quickurrence', () => {
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-01-07'), // One week
+          end: new UTCDateMini('2024-01-07'),
         };
 
         const occurrences = buggyRule.getAllOccurrences(range);
@@ -6057,66 +5960,61 @@ describe('Quickurrence', () => {
         // Check that weekends ARE included (this would be the bug)
         const hasWeekends = occurrences.some((occurrence) => {
           const day = occurrence.getDay();
-          return day === 0 || day === 6; // Sunday or Saturday
+          return day === 0 || day === 6;
         });
         expect(hasWeekends).toBe(true); // This shows the bug behavior
       });
 
       it('should correctly handle weekdays preset vs all-days behavior', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
 
         // Correct weekdays preset
         const correctRule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1, 2, 3, 4, 5], // Monday-Friday only
+          weekDays: [1, 2, 3, 4, 5],
         });
 
         // Buggy behavior (all days)
         const buggyRule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [0, 1, 2, 3, 4, 5, 6], // All 7 days
+          weekDays: [0, 1, 2, 3, 4, 5, 6],
         });
 
         const range = {
           start: new UTCDateMini('2024-01-01'),
-          end: new UTCDateMini('2024-01-14'), // 2 weeks
+          end: new UTCDateMini('2024-01-14'),
         };
 
         const correctOccurrences = correctRule.getAllOccurrences(range);
         const buggyOccurrences = buggyRule.getAllOccurrences(range);
 
-        // Correct should have 10 occurrences (2 weeks × 5 weekdays)
         expect(correctOccurrences).toHaveLength(10);
 
-        // Buggy would have 14 occurrences (2 weeks × 7 days)
         expect(buggyOccurrences).toHaveLength(14);
 
-        // The difference should be the weekend days
-        expect(buggyOccurrences.length - correctOccurrences.length).toBe(4); // 4 weekend days in 2 weeks
+        expect(buggyOccurrences.length - correctOccurrences.length).toBe(4);
       });
 
       it('should maintain correct weekDays array after multiple getNextOccurrence calls', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1, 2, 3, 4, 5], // Monday through Friday
+          weekDays: [1, 2, 3, 4, 5],
         });
 
-        // Simulate multiple task completions
-        let currentDate = new UTCDateMini('2024-01-01'); // Start with Monday
+        let currentDate = new UTCDateMini('2024-01-01');
 
         for (let i = 0; i < 10; i++) {
           const nextOccurrence = rule.getNextOccurrence(currentDate);
           const dayOfWeek = nextOccurrence.getDay();
 
-          // Should always be a weekday
-          expect(dayOfWeek).toBeGreaterThanOrEqual(1); // Monday or later
-          expect(dayOfWeek).toBeLessThanOrEqual(5); // Friday or earlier
-          expect(dayOfWeek).not.toBe(0); // Never Sunday
-          expect(dayOfWeek).not.toBe(6); // Never Saturday
+          expect(dayOfWeek).toBeGreaterThanOrEqual(1);
+          expect(dayOfWeek).toBeLessThanOrEqual(5);
+          expect(dayOfWeek).not.toBe(0);
+          expect(dayOfWeek).not.toBe(6);
 
           currentDate = new UTCDateMini(nextOccurrence);
         }
@@ -6128,38 +6026,34 @@ describe('Quickurrence', () => {
       });
 
       it('should handle edge case of completing last weekday of week', () => {
-        const startDate = new UTCDateMini('2024-01-01'); // Monday
+        const startDate = new UTCDateMini('2024-01-01');
         const rule = new Quickurrence({
           startDate,
           rule: 'weekly',
-          weekDays: [1, 2, 3, 4, 5], // Monday through Friday
+          weekDays: [1, 2, 3, 4, 5],
         });
 
-        // Complete a task on Friday (last weekday of week)
         const nextAfterFriday = rule.getNextOccurrence(
-          new UTCDateMini('2024-01-05'), // Friday
+          new UTCDateMini('2024-01-05'),
         );
 
-        // Should jump to Monday of next week, skipping weekend
-        expect(nextAfterFriday).toEqual(new UTCDateMini('2024-01-08')); // Monday
+        expect(nextAfterFriday).toEqual(new UTCDateMini('2024-01-08'));
         expect(nextAfterFriday.getDay()).toBe(1); // Should be Monday, not Saturday (6) or Sunday (0)
 
-        // Complete that Monday task
         const nextAfterMonday = rule.getNextOccurrence(
-          new UTCDateMini('2024-01-08'), // Monday
+          new UTCDateMini('2024-01-08'),
         );
 
-        // Should be Tuesday
-        expect(nextAfterMonday).toEqual(new UTCDateMini('2024-01-09')); // Tuesday
-        expect(nextAfterMonday.getDay()).toBe(2); // Should be Tuesday
+        expect(nextAfterMonday).toEqual(new UTCDateMini('2024-01-09'));
+        expect(nextAfterMonday.getDay()).toBe(2);
       });
 
       it('should work correctly with consistent timezone usage (fixed backend approach)', () => {
         // The fix: Use UTC consistently for both Quickurrence instance and dates
         const originalQuickurrence: QuickurrenceOptions = {
-          startDate: new UTCDateMini('2024-01-01'), // Monday
+          startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          weekDays: [1, 2, 3, 4, 5], // Monday through Friday (weekdays preset)
+          weekDays: [1, 2, 3, 4, 5],
           timezone: 'UTC',
         };
 
@@ -6170,38 +6064,35 @@ describe('Quickurrence', () => {
         });
 
         // Test with UTC dates (as stored in database)
-        const testDate = new UTCDateMini('2024-01-03'); // Wednesday in UTC
+        const testDate = new UTCDateMini('2024-01-03');
 
         const nextOccurrence = quickurrence.getNextOccurrence(testDate);
 
-        // Should correctly return Thursday (next weekday)
-        expect(nextOccurrence.getDay()).toBe(4); // Thursday
-        expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-04')); // Thursday
+        expect(nextOccurrence.getDay()).toBe(4);
+        expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-04'));
 
-        // Verify weekDays are still correct
         const weekDays = quickurrence.getWeekDays();
         expect(weekDays).toEqual([1, 2, 3, 4, 5]);
       });
 
       it('should reproduce Quickurrence.update scenario from backend due date changes', () => {
         const originalQuickurrence: QuickurrenceOptions = {
-          startDate: new UTCDateMini('2024-01-01'), // Monday
+          startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          weekDays: [1, 2, 3, 4, 5], // Monday through Friday (weekdays preset)
+          weekDays: [1, 2, 3, 4, 5],
           timezone: 'UTC',
         };
 
-        // Create a proper date in America/New_York timezone
         const newStartDate = new Date('2024-01-08T00:00:00-05:00'); // Jan 8 midnight in NY time
 
         const updatedQuickurrence = Quickurrence.update(originalQuickurrence, {
           startDate: newStartDate,
-          timezone: 'America/New_York', // User timezone
+          timezone: 'America/New_York',
         });
 
         expect(updatedQuickurrence).toBeDefined();
         if (updatedQuickurrence) {
-          expect(updatedQuickurrence.weekDays).toEqual([1, 2, 3, 4, 5]); // Should still be weekdays only
+          expect(updatedQuickurrence.weekDays).toEqual([1, 2, 3, 4, 5]);
           expect(updatedQuickurrence.weekDays).toHaveLength(5); // Should not be 7 days
           // The startDate should be normalized to start of day in America/New_York timezone
           // When we pass Jan 8 00:00 NY time and normalize it, it should stay as Jan 8 00:00 NY time
@@ -6211,7 +6102,6 @@ describe('Quickurrence', () => {
           );
           expect(updatedQuickurrence.timezone).toBe('America/New_York');
 
-          // Test that creating a new Quickurrence with these options works correctly
           const newQuickurrence = new Quickurrence(updatedQuickurrence);
           const weekDays = newQuickurrence.getWeekDays();
           expect(weekDays).toEqual([1, 2, 3, 4, 5]);
@@ -6224,13 +6114,13 @@ describe('Quickurrence', () => {
         const originalQuickurrence: QuickurrenceOptions = {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
-          weekDays: [1, 2, 3, 4, 5], // Weekdays preset
+          weekDays: [1, 2, 3, 4, 5],
           timezone: 'UTC',
         };
 
         // Simulate JSON serialization (what happens when storing to JSONB)
         const serialized = JSON.stringify(originalQuickurrence);
-        expect(serialized).toContain('[1,2,3,4,5]'); // Should contain correct weekdays
+        expect(serialized).toContain('[1,2,3,4,5]');
 
         // Simulate JSON deserialization (what happens when retrieving from JSONB)
         const deserialized = JSON.parse(serialized) as QuickurrenceOptions;
@@ -6243,13 +6133,11 @@ describe('Quickurrence', () => {
         expect(deserialized.weekDays).toEqual([1, 2, 3, 4, 5]);
         expect(deserialized.weekDays).toHaveLength(5);
 
-        // Test creating Quickurrence from deserialized data
         const quickurrence = new Quickurrence(deserialized);
         const weekDays = quickurrence.getWeekDays();
         expect(weekDays).toEqual([1, 2, 3, 4, 5]);
         expect(weekDays).toHaveLength(5);
 
-        // Test that it doesn't include weekends
         const range = {
           start: new UTCDateMini('2024-01-01'),
           end: new UTCDateMini('2024-01-14'),
@@ -6257,8 +6145,8 @@ describe('Quickurrence', () => {
         const occurrences = quickurrence.getAllOccurrences(range);
         occurrences.forEach((occurrence) => {
           const day = occurrence.getDay();
-          expect(day).not.toBe(0); // Not Sunday
-          expect(day).not.toBe(6); // Not Saturday
+          expect(day).not.toBe(0);
+          expect(day).not.toBe(6);
         });
       });
     });
@@ -6266,28 +6154,28 @@ describe('Quickurrence', () => {
 
   describe('sortWeekDaysForDisplay static method', () => {
     it('should sort weekdays with Saturday before Sunday', () => {
-      const weekdays: WeekDay[] = [0, 6]; // Sunday, Saturday
+      const weekdays: WeekDay[] = [0, 6];
       const result = Quickurrence.sortWeekDaysForDisplay(weekdays);
-      expect(result).toEqual([6, 0]); // Saturday, Sunday
+      expect(result).toEqual([6, 0]);
     });
 
     it('should handle multiple weekdays with Saturday before Sunday', () => {
-      const weekdays: WeekDay[] = [0, 1, 3, 6]; // Sunday, Monday, Wednesday, Saturday
+      const weekdays: WeekDay[] = [0, 1, 3, 6];
       const result = Quickurrence.sortWeekDaysForDisplay(weekdays);
-      expect(result).toEqual([6, 0, 1, 3]); // Saturday, Sunday, Monday, Wednesday
+      expect(result).toEqual([6, 0, 1, 3]);
     });
 
     it('should handle all weekdays correctly', () => {
-      const weekdays: WeekDay[] = [0, 1, 2, 3, 4, 5, 6]; // Sunday through Saturday
+      const weekdays: WeekDay[] = [0, 1, 2, 3, 4, 5, 6];
       const result = Quickurrence.sortWeekDaysForDisplay(weekdays);
-      expect(result).toEqual([6, 0, 1, 2, 3, 4, 5]); // Saturday, Sunday, Monday, Tuesday, Wednesday, Thursday, Friday
+      expect(result).toEqual([6, 0, 1, 2, 3, 4, 5]);
     });
 
     it('should return a new array without modifying the original', () => {
       const weekdays: WeekDay[] = [0, 6];
       const result = Quickurrence.sortWeekDaysForDisplay(weekdays);
-      expect(result).not.toBe(weekdays); // Should be a different array reference
-      expect(weekdays).toEqual([0, 6]); // Original should remain unchanged
+      expect(result).not.toBe(weekdays);
+      expect(weekdays).toEqual([0, 6]);
     });
 
     it('should handle empty array', () => {
@@ -6297,7 +6185,7 @@ describe('Quickurrence', () => {
     });
 
     it('should handle single weekday', () => {
-      const weekdays: WeekDay[] = [3]; // Wednesday
+      const weekdays: WeekDay[] = [3];
       const result = Quickurrence.sortWeekDaysForDisplay(weekdays);
       expect(result).toEqual([3]);
     });
@@ -6346,7 +6234,7 @@ describe('Quickurrence', () => {
     it('exercises getNextWeekdayOccurrence nextDay branch', () => {
       const rule = new Quickurrence({
         rule: 'weekly',
-        startDate: new Date('2026-01-05T00:00:00Z'), // Mon
+        startDate: new Date('2026-01-05T00:00:00Z'),
         timezone: 'UTC',
         weekDays: [3], // Wed only — startDate is Mon so nextDay branch fires
         interval: 2,
@@ -6401,7 +6289,7 @@ describe('Quickurrence', () => {
         rule: 'monthly',
         startDate: new Date('2026-01-01T00:00:00Z'),
         timezone: 'UTC',
-        nthWeekdayOfMonth: { weekday: 2, nth: 2 }, // 2nd Tuesday
+        nthWeekdayOfMonth: { weekday: 2, nth: 2 },
         count: 2,
       });
       expect(() =>

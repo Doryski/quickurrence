@@ -219,9 +219,7 @@ describe('Quickurrence.clean', () => {
       const originalOptions = { ...options };
       const cleaned = Quickurrence.clean(options);
 
-      // Original should be unchanged
       expect(options).toEqual(originalOptions);
-      // Cleaned should be different
       expect(cleaned.weekDays).toBeUndefined();
       expect(cleaned.monthDay).toBeUndefined();
     });
@@ -251,7 +249,6 @@ describe('Quickurrence.clean', () => {
       expect(cleaned.count).toBe(5);
       expect(cleaned.preset).toBe('businessDays');
 
-      // Should be removed
       expect(cleaned.weekDays).toBeUndefined();
       expect(cleaned.monthDay).toBeUndefined();
       expect(cleaned.monthDayMode).toBeUndefined();
@@ -272,12 +269,10 @@ describe('Quickurrence.clean', () => {
 
       const cleaned = Quickurrence.clean(invalidOptions);
 
-      // Should be able to create instance without errors
       expect(() => {
         new Quickurrence(cleaned);
       }).not.toThrow();
 
-      // Should be able to generate human text
       expect(() => {
         new Quickurrence(cleaned).toHumanText();
       }).not.toThrow();
@@ -309,7 +304,6 @@ describe('Quickurrence.clean', () => {
         weekDays: [1, 2, 3] as WeekDay[], // Invalid for daily
       };
 
-      // Should not throw error now
       expect(() => {
         Quickurrence.toHumanText(invalidOptions);
       }).not.toThrow();
@@ -357,7 +351,7 @@ describe('Quickurrence.clean', () => {
 
       expect(cleaned.rule).toBe('daily');
       expect(cleaned.interval).toBe(2);
-      expect(cleaned.weekDays).toBeUndefined(); // Should be removed
+      expect(cleaned.weekDays).toBeUndefined();
     });
 
     it('should handle transitioning from monthly to weekly rule', () => {
@@ -374,8 +368,8 @@ describe('Quickurrence.clean', () => {
 
       expect(cleaned.rule).toBe('weekly');
       expect(cleaned.weekDays).toEqual([1, 3]);
-      expect(cleaned.monthDay).toBeUndefined(); // Should be removed
-      expect(cleaned.monthDayMode).toBeUndefined(); // Should be removed
+      expect(cleaned.monthDay).toBeUndefined();
+      expect(cleaned.monthDayMode).toBeUndefined();
     });
 
     it('should handle form state with conflicting end conditions', () => {

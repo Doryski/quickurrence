@@ -9,13 +9,13 @@ describe('QuickurrenceMerge', () => {
       const rule1 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-01'),
         rule: 'daily',
-        interval: 2, // Every 2 days
+        interval: 2,
       });
 
       const rule2 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-02'),
         rule: 'daily',
-        interval: 3, // Every 3 days
+        interval: 3,
       });
 
       const merged = new QuickurrenceMerge([rule1, rule2]);
@@ -45,14 +45,14 @@ describe('QuickurrenceMerge', () => {
         startDate: new UTCDateMini('2024-01-01'), // Monday
         rule: 'weekly',
         weekDays: [1], // Monday
-        interval: 2, // Every 2 weeks
+        interval: 2,
       });
 
       const rule2 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-01'),
         rule: 'weekly',
         weekDays: [2], // Tuesday
-        interval: 3, // Every 3 weeks
+        interval: 3,
       });
 
       const merged = new QuickurrenceMerge([rule1, rule2]);
@@ -66,14 +66,12 @@ describe('QuickurrenceMerge', () => {
 
       expect(occurrences.length).toBeGreaterThan(0);
 
-      // Should include both Monday and Tuesday occurrences
       const mondays = occurrences.filter((d) => d.getDay() === 1);
       const tuesdays = occurrences.filter((d) => d.getDay() === 2);
 
       expect(mondays.length).toBeGreaterThan(0);
       expect(tuesdays.length).toBeGreaterThan(0);
 
-      // Verify specific dates
       expect(occurrences[0]).toEqual(new UTCDateMini('2024-01-01')); // Monday
       expect(occurrences[1]).toEqual(new UTCDateMini('2024-01-02')); // Tuesday
     });
@@ -82,7 +80,7 @@ describe('QuickurrenceMerge', () => {
       const rule1 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-01'),
         rule: 'monthly',
-        monthDay: 15, // 15th of each month
+        monthDay: 15,
       });
 
       const rule2 = new Quickurrence({
@@ -102,7 +100,6 @@ describe('QuickurrenceMerge', () => {
 
       expect(occurrences.length).toBeGreaterThan(0);
 
-      // Should have occurrences from both monthly patterns
       const monthlyDates = occurrences.filter((d) => d.getDate() === 15);
       const lastMondays = occurrences.filter((d) => d.getDay() === 1);
 
@@ -137,13 +134,13 @@ describe('QuickurrenceMerge', () => {
       const rule1 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-01'),
         rule: 'weekly',
-        interval: 2, // Every 2 weeks on Monday
+        interval: 2,
       });
 
       const rule2 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-03'),
         rule: 'weekly',
-        interval: 3, // Every 3 weeks on Wednesday
+        interval: 3,
       });
 
       const merged = new QuickurrenceMerge([rule1, rule2]);
@@ -179,7 +176,7 @@ describe('QuickurrenceMerge', () => {
       const rule1 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-01'),
         rule: 'daily',
-        count: 2, // Only 2 occurrences
+        count: 2,
       });
 
       const rule2 = new Quickurrence({
@@ -277,7 +274,7 @@ describe('QuickurrenceMerge', () => {
 
       const merged = new QuickurrenceMerge([rule1, rule2]);
 
-      expect(merged.getCount()).toBe(8); // 5 + 3
+      expect(merged.getCount()).toBe(8);
     });
 
     it('should return undefined for count when any rule has no count limit', () => {
@@ -382,7 +379,7 @@ describe('QuickurrenceMerge', () => {
       expect(retrievedRules).toHaveLength(2);
       expect(retrievedRules[0]).toBe(rule1);
       expect(retrievedRules[1]).toBe(rule2);
-      expect(retrievedRules).not.toBe(originalRules); // Should be a copy
+      expect(retrievedRules).not.toBe(originalRules);
     });
 
     it('should throw error for unsupported methods', () => {
@@ -433,7 +430,7 @@ describe('QuickurrenceMerge', () => {
       const rule2 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-01'),
         rule: 'daily',
-        interval: 2, // Every other day
+        interval: 2,
       });
 
       const merged = new QuickurrenceMerge([rule1, rule2]);
@@ -577,7 +574,7 @@ describe('QuickurrenceMerge', () => {
       const rule1 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-01'),
         rule: 'monthly',
-        monthDay: 15, // 15th of each month
+        monthDay: 15,
       });
 
       const rule2 = new Quickurrence({
@@ -608,13 +605,13 @@ describe('QuickurrenceMerge', () => {
       const rule1 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-01'),
         rule: 'daily',
-        count: 10, // Only 10 occurrences
+        count: 10,
       });
 
       const rule2 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-01'),
         rule: 'daily',
-        endDate: new UTCDateMini('2024-01-05'), // Until Jan 5th
+        endDate: new UTCDateMini('2024-01-05'),
       });
 
       const merged = new QuickurrenceMerge([rule1, rule2]);
@@ -644,7 +641,7 @@ describe('QuickurrenceMerge', () => {
       const rule2 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-01'),
         rule: 'daily',
-        interval: 2, // Every other day
+        interval: 2,
       });
 
       const merged = new QuickurrenceMerge([rule1, rule2]);
@@ -757,7 +754,7 @@ describe('QuickurrenceMerge', () => {
       const rule1 = new Quickurrence({
         startDate: new UTCDateMini('2024-01-01'),
         rule: 'daily',
-        count: 3, // Only 3 occurrences
+        count: 3,
       });
 
       const rule2 = new Quickurrence({
@@ -893,7 +890,6 @@ describe('QuickurrenceMerge', () => {
         end: new UTCDateMini('2024-01-12'),
       };
 
-      // Find days when ALL departments have meetings
       const commonOccurrences = merged.getCommonOccurrences(range);
 
       // Engineering: All business days (Mon-Fri)
@@ -906,7 +902,6 @@ describe('QuickurrenceMerge', () => {
         expect(day === 3 || day === 5).toBe(true); // Only Wed (3) or Fri (5)
       });
 
-      // Verify specific dates
       expect(commonOccurrences[0]).toEqual(new UTCDateMini('2024-01-03')); // Wednesday
       expect(commonOccurrences[1]).toEqual(new UTCDateMini('2024-01-05')); // Friday
     });
@@ -918,13 +913,13 @@ describe('QuickurrenceMerge', () => {
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
           weekDays: [1], // Monday
-          interval: 2, // Every 2 weeks
+          interval: 2,
         }),
         new Quickurrence({
           startDate: new UTCDateMini('2024-01-01'),
           rule: 'weekly',
           weekDays: [2], // Tuesday
-          interval: 3, // Every 3 weeks
+          interval: 3,
         }),
       ]);
 
@@ -935,7 +930,6 @@ describe('QuickurrenceMerge', () => {
 
       expect(occurrences.length).toBeGreaterThan(0);
 
-      // Verify we have both Mondays and Tuesdays
       const mondays = occurrences.filter((d) => d.getDay() === 1);
       const tuesdays = occurrences.filter((d) => d.getDay() === 2);
 
@@ -959,7 +953,7 @@ describe('QuickurrenceMerge', () => {
         startDate: new UTCDateMini('2024-01-03'),
         rule: 'weekly',
         weekDays: [3], // Wednesday
-        interval: 2, // Every 2 weeks
+        interval: 2,
       });
 
       const merged = new QuickurrenceMerge([engineeringMeetings, allHands]);
@@ -974,7 +968,6 @@ describe('QuickurrenceMerge', () => {
       // Should include all engineering meetings plus all-hands (which overlaps on some Wednesdays)
       expect(occurrences.length).toBeGreaterThan(0);
 
-      // Verify no weekends
       occurrences.forEach((occurrence) => {
         const day = occurrence.getDay();
         expect(day).not.toBe(0); // Not Sunday

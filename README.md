@@ -36,7 +36,14 @@ const daily = new Quickurrence({
   timezone: 'America/New_York',
 });
 
-const next5Days = daily.getNextOccurrences(5);
+// All occurrences within a date range (capped at 1000 results)
+const januaryDays = daily.getAllOccurrences({
+  start: new Date('2026-01-01'),
+  end: new Date('2026-01-31'),
+});
+
+// Or just the next single occurrence after a given date
+const next = daily.getNextOccurrence(new Date('2026-01-01'));
 
 // Every Monday and Wednesday
 const weekdays = new Quickurrence({
@@ -73,16 +80,16 @@ The main class for defining and generating recurrence rules.
 
 | Option | Type | Required | Description |
 |--------|------|----------|-------------|
-| `rule` | `'daily' \| 'weekly' \| 'monthly' \| 'yearly'` | Yes | Recurrence frequency |
-| `startDate` | `Date` | Yes | Start date for the recurrence |
-| `timezone` | `string` | No | IANA timezone identifier |
-| `interval` | `number` | No | Interval between occurrences (e.g., every 2 weeks) |
+| `rule` | `'daily' \| 'weekly' \| 'monthly' \| 'yearly'` | No | Recurrence frequency (defaults to `'daily'`) |
+| `startDate` | `Date` | No | Start date for the recurrence (defaults to now, normalized to start of day in `timezone`) |
+| `timezone` | `string` | No | IANA timezone identifier (defaults to `'UTC'`) |
+| `interval` | `number` (≥ 1) | No | Interval between occurrences (e.g., every 2 weeks; defaults to `1`) |
 | `endDate` | `Date` | No | End date for the recurrence |
-| `count` | `number` | No | Maximum number of occurrences |
-| `weekStartsOn` | `Day` (0-6) | No | First day of the week (0 = Sunday) |
+| `count` | `number` (≥ 1) | No | Maximum number of occurrences |
+| `weekStartsOn` | `Day` (0-6) | No | First day of the week (0 = Sunday; defaults to `1` = Monday) |
 | `weekDays` | `Day[]` | No | Days of the week for weekly rules |
 | `monthDay` | `MonthDay` (1-31) | No | Day of the month for monthly rules |
-| `monthDayMode` | `'skip' \| 'last'` | No | How to handle months without the specified day |
+| `monthDayMode` | `'skip' \| 'last'` | No | How to handle months without the specified day (defaults to `'last'`) |
 | `nthWeekdayOfMonth` | `NthWeekdayConfig` | No | Nth weekday of month (e.g., 2nd Tuesday) |
 | `excludeDates` | `Date[]` | No | Dates to exclude from the recurrence |
 | `condition` | `boolean \| ((date: Date) => boolean)` | No | Custom filter condition |
@@ -91,10 +98,14 @@ The main class for defining and generating recurrence rules.
 
 #### Methods
 
-- **`getNextOccurrences(count: number): Date[]`** - Get the next N occurrences
-- **`getOccurrencesInRange(range: DateRange): Date[]`** - Get occurrences within a date range
-- **`getNextOccurrence(): Date | null`** - Get the next single occurrence
-- **`isOccurrence(date: Date): boolean`** - Check if a date matches the recurrence rule
+- **`getNextOccurrence(after?: Date): Date`** - Get the next single occurrence strictly after `after` (defaults to `new Date()`). Throws a `QuickurrenceError` when no further occurrence exists (e.g. `count`/`endDate` limit reached).
+- **`getAllOccurrences(range: DateRange): Date[]`** - Get every occurrence within the given `{ start, end }` range. Results are capped at 1000 as a safety limit. To test whether a specific date is an occurrence, generate the occurrences for that day's range and check membership.
+- **`getStartDate(): Date`** / **`getEndDate(): Date | undefined`** - Get the normalized start / end date.
+- **`getRule(): RecurrenceRule`** - Get the recurrence rule.
+- **`getOptions(): QuickurrenceOptions`** - Get a clone of the options used to build the instance.
+- **`toHumanText(): string`** - Human-readable description (also available as the static `Quickurrence.toHumanText(options)`).
+- Config getters: **`getWeekStartsOn`**, **`getWeekDays`**, **`getMonthDay`**, **`getMonthDayMode`**, **`getNthWeekdayOfMonth`**, **`getCount`**, **`getExcludeDates`**, **`getCondition`**, **`getPreset`**, **`getTimesOfDay`**.
+- Static helpers: **`Quickurrence.clean(options)`**, **`Quickurrence.presetToOptions(preset)`**, **`Quickurrence.update(options, updates)`**, **`Quickurrence.getMatchingPreset(options)`**, **`Quickurrence.sortWeekDaysForDisplay(weekDays)`**.
 
 ### `QuickurrenceMerge`
 
@@ -107,8 +118,24 @@ const rule1 = new Quickurrence({ rule: 'weekly', startDate: new Date(), weekDays
 const rule2 = new Quickurrence({ rule: 'weekly', startDate: new Date(), weekDays: [4] });
 
 const merged = new QuickurrenceMerge([rule1, rule2]);
-const dates = merged.getNextOccurrences(10); // Combined Monday + Thursday dates
+
+// Union: all Monday + Thursday dates within a range (deduplicated, sorted, capped at 1000 per rule)
+const union = merged.getAllOccurrences({
+  start: new Date('2026-01-01'),
+  end: new Date('2026-03-31'),
+});
+
+// Intersection: dates common to ALL merged rules within the range
+const common = merged.getCommonOccurrences({
+  start: new Date('2026-01-01'),
+  end: new Date('2026-03-31'),
+});
+
+// The single earliest next occurrence across all merged rules
+const nextMerged = merged.getNextOccurrence(new Date('2026-01-01'));
 ```
+
+`QuickurrenceMerge` also mirrors several accessors (`getStartDate`, `getEndDate`, `getCount`, `getExcludeDates`, `getRuleCount`, `getRules`). Rule-specific accessors that have no single meaning across merged rules (`getRule`, `getWeekDays`, `getOptions`, etc.) throw a `QuickurrenceError`.
 
 ### `QuickurrenceValidator`
 
@@ -138,7 +165,10 @@ import type {
   NthWeekdayOfMonth,
   NthWeekdayConfig,
   Condition,
+  TimeOfDay,
+  TimesOfDay,
   QuickurrenceOptions,
+  QuickurrenceErrorContext,
 } from 'quickurrence';
 ```
 
@@ -223,7 +253,7 @@ const rule = new Quickurrence({
   weekDays: [1, 3, 5],
 });
 
-const dates = rule.getOccurrencesInRange({
+const dates = rule.getAllOccurrences({
   start: new Date('2026-02-01'),
   end: new Date('2026-02-28'),
 });
@@ -234,7 +264,11 @@ const dates = rule.getOccurrencesInRange({
 Quickurrence provides structured errors with error codes for programmatic handling:
 
 ```typescript
-import { QuickurrenceError, QuickurrenceErrorCode } from 'quickurrence';
+import {
+  QuickurrenceError,
+  QuickurrenceErrorCode,
+  QuickurrenceErrorType,
+} from 'quickurrence';
 
 try {
   new Quickurrence({ rule: 'weekly', startDate: new Date(), weekDays: [] });

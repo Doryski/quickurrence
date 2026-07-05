@@ -619,9 +619,57 @@ export class Quickurrence {
   }
 
   /**
-   * Time-aware variant of getNextOccurrence.
+   * Time-aware variant of getNextOccurrence. The non-count path walks matching
+   * days lazily through the fast-forwarded getNextOccurrenceByDay, expanding
+   * only as many days as needed instead of materializing a multi-year window.
    */
   private getNextOccurrenceWithTimes(after: Date): Date {
+    if (this.count !== undefined) {
+      return this.getNextOccurrenceWithTimesWindowed(after);
+    }
+
+    const afterDay = startOfDay(after, { in: this.tzContext });
+    let day = this.getNextOccurrenceByDay(new Date(afterDay.getTime() - 1));
+
+    let attempts = 0;
+    const maxAttempts = 1000;
+    while (attempts <= maxAttempts) {
+      if (this.endDate && isAfter(day, this.endDate)) {
+        break;
+      }
+
+      const times = this.expandDayWithTimes(day).sort(
+        (a, b) => a.getTime() - b.getTime(),
+      );
+      for (const t of times) {
+        if (
+          isAfter(t, after) &&
+          (!this.endDate || !isAfter(t, this.endDate)) &&
+          !this.isDateExcluded(t)
+        ) {
+          return t;
+        }
+      }
+
+      day = this.getNextOccurrenceByDay(day);
+      attempts++;
+    }
+
+    throw QuickurrenceError.runtime(
+      'No more occurrences within the specified end date',
+      QuickurrenceErrorCode.END_DATE_EXCEEDED,
+      {
+        operation: 'getNextOccurrence',
+        details: { endDate: this.endDate, afterDate: after },
+      },
+    );
+  }
+
+  /**
+   * Count-bounded time-aware next-occurrence: enumerates from the start so the
+   * Nth-occurrence limit is honored, then returns the first datetime after `after`.
+   */
+  private getNextOccurrenceWithTimesWindowed(after: Date): Date {
     const windowStartReference = isAfter(after, this.startDate)
       ? after
       : this.startDate;
@@ -635,22 +683,12 @@ export class Quickurrence {
         return occ;
       }
     }
-    if (this.count !== undefined) {
-      throw QuickurrenceError.runtime(
-        'No more occurrences within the specified count limit',
-        QuickurrenceErrorCode.COUNT_LIMIT_EXCEEDED,
-        {
-          operation: 'getNextOccurrence',
-          details: { countLimit: this.count },
-        },
-      );
-    }
     throw QuickurrenceError.runtime(
-      'No more occurrences within the specified end date',
-      QuickurrenceErrorCode.END_DATE_EXCEEDED,
+      'No more occurrences within the specified count limit',
+      QuickurrenceErrorCode.COUNT_LIMIT_EXCEEDED,
       {
         operation: 'getNextOccurrence',
-        details: { endDate: this.endDate, afterDate: after },
+        details: { countLimit: this.count },
       },
     );
   }

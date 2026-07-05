@@ -139,6 +139,92 @@ describe('timesOfDay', () => {
         rule.getNextOccurrence(new Date('2026-01-01T15:00:00Z')),
       ).toThrowError(/count limit|COUNT_LIMIT_EXCEEDED/i);
     });
+
+    it('resolves a far-future query on an infinite daily rule without a full window', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: new Date('2020-01-01T00:00:00Z'),
+        timezone: 'UTC',
+        timesOfDay: ['09:00'],
+      });
+      const next = rule.getNextOccurrence(new Date('2050-06-15T12:00:00Z'));
+      expect(fmtUTC(next)).toBe('2050-06-16T09:00');
+    });
+
+    it('picks the earliest time on the same day when after precedes it', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: new Date('2026-01-01T00:00:00Z'),
+        timezone: 'UTC',
+        timesOfDay: ['14:30', '09:00'],
+      });
+      const next = rule.getNextOccurrence(new Date('2026-06-10T06:00:00Z'));
+      expect(fmtUTC(next)).toBe('2026-06-10T09:00');
+    });
+
+    it('skips a day whose only time is excluded and returns the next day', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: new Date('2026-01-01T00:00:00Z'),
+        timezone: 'UTC',
+        timesOfDay: ['09:00'],
+        excludeDates: [new Date('2026-01-02T09:00:00Z')],
+      });
+      const next = rule.getNextOccurrence(new Date('2026-01-01T12:00:00Z'));
+      expect(fmtUTC(next)).toBe('2026-01-03T09:00');
+    });
+
+    it('advances across an interval > 1 daily rule', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        interval: 3,
+        startDate: new Date('2026-01-01T00:00:00Z'),
+        timezone: 'UTC',
+        timesOfDay: ['09:00'],
+      });
+      const next = rule.getNextOccurrence(new Date('2026-01-04T10:00:00Z'));
+      expect(fmtUTC(next)).toBe('2026-01-07T09:00');
+    });
+
+    it('walks weekly weekDays rules', () => {
+      const rule = new Quickurrence({
+        rule: 'weekly',
+        startDate: new Date('2026-01-05T00:00:00Z'), // Mon
+        timezone: 'UTC',
+        weekDays: [1, 3], // Mon, Wed
+        timesOfDay: ['09:00', '17:00'],
+      });
+      const next = rule.getNextOccurrence(new Date('2026-01-05T10:00:00Z'));
+      expect(fmtUTC(next)).toBe('2026-01-05T17:00');
+      const acrossWeekday = rule.getNextOccurrence(
+        new Date('2026-01-05T18:00:00Z'),
+      );
+      expect(fmtUTC(acrossWeekday)).toBe('2026-01-07T09:00');
+    });
+
+    it('walks monthly specific-day rules', () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new Date('2026-01-15T00:00:00Z'),
+        monthDay: 15,
+        timezone: 'UTC',
+        timesOfDay: ['09:00'],
+      });
+      const next = rule.getNextOccurrence(new Date('2026-01-15T12:00:00Z'));
+      expect(fmtUTC(next)).toBe('2026-02-15T09:00');
+    });
+
+    it('honors a day-level condition on the lazy path', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: new Date('2026-01-01T00:00:00Z'),
+        timezone: 'UTC',
+        timesOfDay: ['09:00'],
+        condition: (date) => date.getUTCDate() % 2 === 0,
+      });
+      const next = rule.getNextOccurrence(new Date('2026-01-01T12:00:00Z'));
+      expect(fmtUTC(next)).toBe('2026-01-02T09:00');
+    });
   });
 
   describe('range filtering', () => {

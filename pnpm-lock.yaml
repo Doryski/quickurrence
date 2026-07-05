@@ -21,6 +21,9 @@ importers:
       '@date-fns/utc':
         specifier: ^2.1.1
         version: 2.1.1
+      '@doryski/release':
+        specifier: ^1.0.0
+        version: 1.0.0
       '@types/node':
         specifier: ^25.6.0
         version: 25.6.0
@@ -75,6 +78,11 @@ packages:
 
   '@date-fns/utc@2.1.1':
     resolution: {integrity: sha512-SlJDfG6RPeEX8wEVv6ZB3kak4MmbtyiI2qX/5zuKdordbrhB/iaJ58GVMZgJ6P1sJaM1gMgENFYYeg1JWrCFrA==}
+
+  '@doryski/release@1.0.0':
+    resolution: {integrity: sha512-exC94Ig7FM1mqBr5l9hQeoZPN2hKxxDHVqv3PqDleQFnMJF2tuYISj9IgtBUaLL1DDWW2ckKEsfhkpLVSlgYoA==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   '@esbuild/aix-ppc64@0.27.7':
     resolution: {integrity: sha512-EKX3Qwmhz1eMdEJokhALr0YiD0lhQNwDqkPYyPhiSwKrh7/4KRjQc04sZ8db+5DVVnZ1LmbNDI1uAMPEUBnQPg==}
@@ -1020,6 +1028,10 @@ snapshots:
   '@date-fns/tz@1.4.1': {}
 
   '@date-fns/utc@2.1.1': {}
+
+  '@doryski/release@1.0.0':
+    dependencies:
+      commander: 14.0.3
 
   '@esbuild/aix-ppc64@0.27.7':
     optional: true

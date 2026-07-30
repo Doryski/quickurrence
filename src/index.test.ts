@@ -1,24 +1,83 @@
 import { UTCDateMini } from '@date-fns/utc';
 import { tz, TZDate } from '@date-fns/tz';
 import { startOfDay } from 'date-fns';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CountSchema,
+  DateRangeSchema,
+  IntervalSchema,
+  MonthDaySchema,
+  NthWeekdayOfMonthSchema,
   Quickurrence,
+  QuickurrenceError,
+  QuickurrenceErrorCode,
   type QuickurrenceOptions,
+  QuickurrenceOptionsSchema,
+  QuickurrenceValidator,
+  RecurrenceRuleSchema,
+  TimeOfDaySchema,
+  TimesOfDaySchema,
+  WeekDaySchema,
+  WeekStartsOnSchema,
   type WeekDay,
   type MonthDay,
+  type ZonedParts,
 } from './index';
+import * as publicApi from './index';
+
+const utcWeekday = (date: Date) => new UTCDateMini(date).getUTCDay();
+const utcDayOfMonth = (date: Date) => new UTCDateMini(date).getUTCDate();
+
+const caughtError = (call: () => unknown) => {
+  try {
+    call();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+};
+
+/**
+ * Every coded rejection is asserted the same way: it must be a
+ * `QuickurrenceError` carrying the documented code, and it must NOT be one of
+ * the raw platform errors the 0.4.0 work replaced — a `RangeError` escaping
+ * from `Intl`, or a `TypeError` escaping from an internal `.getTime()`.
+ */
+const expectCode = (call: () => unknown, code: QuickurrenceErrorCode) => {
+  const error = caughtError(call);
+  expect(error).toBeInstanceOf(QuickurrenceError);
+  expect(error).not.toBeInstanceOf(RangeError);
+  expect(error).not.toBeInstanceOf(TypeError);
+  expect((error as QuickurrenceError).code).toBe(code);
+  return error as QuickurrenceError;
+};
 
 describe('Quickurrence', () => {
   describe('Default behavior', () => {
+    // The default startDate is "today" read off the wall clock, so the clock is
+    // pinned: otherwise a run that straddles midnight in the rule's timezone
+    // compares two different days, and the expected instant would depend on
+    // when the suite happens to execute. 12:00Z on a mid-June date keeps every
+    // zone's local day unambiguous and away from any DST transition.
+    const PINNED_NOW = new Date('2026-06-15T12:00:00.000Z');
+
+    beforeEach(() => {
+      vi.useFakeTimers({ now: PINNED_NOW });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it('should create with no options (using defaults)', () => {
       const rule = new Quickurrence();
 
       expect(rule.getRule()).toBe('daily');
       expect(rule.getStartDate()).toBeDefined();
-      // Default timezone is UTC, so today must be computed in UTC.
-      const today = startOfDay(new Date(), { in: tz('UTC') });
-      expect(rule.getStartDate()).toEqual(today);
+      // Default timezone is UTC, so today is 2026-06-15T00:00 UTC.
+      expect(rule.getStartDate().getTime()).toBe(
+        new Date('2026-06-15T00:00:00.000Z').getTime(),
+      );
     });
 
     it('should use default rule when only startDate is provided', () => {
@@ -34,9 +93,10 @@ describe('Quickurrence', () => {
 
       expect(rule.getRule()).toBe('weekly');
       expect(rule.getStartDate()).toBeDefined();
-      // Default timezone is UTC, so today must be computed in UTC.
-      const today = startOfDay(new Date(), { in: tz('UTC') });
-      expect(rule.getStartDate()).toEqual(today);
+      // Default timezone is UTC, so today is 2026-06-15T00:00 UTC.
+      expect(rule.getStartDate().getTime()).toBe(
+        new Date('2026-06-15T00:00:00.000Z').getTime(),
+      );
     });
 
     it('should use timezone for default startDate', () => {
@@ -44,8 +104,12 @@ describe('Quickurrence', () => {
       const rule = new Quickurrence({ timezone });
 
       expect(rule.getStartDate()).toBeDefined();
-      const today = startOfDay(new Date(), { in: tz(timezone) });
-      expect(rule.getStartDate()).toEqual(today);
+      // 2026-06-15 in New York is EDT (UTC-4), so its midnight is 04:00 UTC —
+      // four hours later than the UTC default above, which is what makes this
+      // assertion timezone-sensitive rather than a restatement of the default.
+      expect(rule.getStartDate().getTime()).toBe(
+        new Date('2026-06-15T04:00:00.000Z').getTime(),
+      );
     });
   });
 
@@ -602,8 +666,10 @@ describe('Quickurrence', () => {
           const nextOccurrence = rule.getNextOccurrence(
             new TZDate('2024-02-01', timezone),
           );
+          // Warsaw midnight spelled out rather than derived with startOfDay,
+          // which round-trips the wall clock through the host zone.
           expect(nextOccurrence).toEqual(
-            startOfDay(new TZDate('2024-03-01', timezone), { in: tz(timezone) }),
+            new TZDate('2024-03-01T00:00:00.000+01:00', timezone),
           );
         });
       });
@@ -1473,23 +1539,18 @@ describe('Quickurrence', () => {
           '2025-11-08T01:00:00.000+01:00',
           'Europe/Warsaw',
         );
+        // Warsaw is CET (+01:00) in November, so each expected instant is that
+        // day's Warsaw midnight, derived by hand rather than round-tripped
+        // through a host-relative start-of-day.
         let next = rule.getNextOccurrence(nov8);
+        expect(next.getTime()).toBe(Date.parse('2025-11-09T23:00:00.000Z'));
+
         const nov10 = new TZDate(
           '2025-11-10T01:00:00.000+01:00',
           'Europe/Warsaw',
         );
-        expect(startOfDay(next, { in: tz('Europe/Warsaw') })).toEqual(
-          startOfDay(nov10, { in: tz('Europe/Warsaw') }),
-        );
-
         next = rule.getNextOccurrence(nov10);
-        const nov12 = new TZDate(
-          '2025-11-12T01:00:00.000+01:00',
-          'Europe/Warsaw',
-        );
-        expect(startOfDay(next, { in: tz('Europe/Warsaw') })).toEqual(
-          startOfDay(nov12, { in: tz('Europe/Warsaw') }),
-        );
+        expect(next.getTime()).toBe(Date.parse('2025-11-11T23:00:00.000Z'));
       });
 
       it('should not return same date when called on valid occurrence date', () => {
@@ -3604,7 +3665,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          condition: (date) => date.getDate() % 2 === 1,
+          condition: (_date, parts) => parts.day % 2 === 1,
         });
 
         const range = {
@@ -3626,7 +3687,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'weekly',
           weekDays: [1, 3, 5],
-          condition: (date) => date.getDate() <= 15,
+          condition: (_date, parts) => parts.day <= 15,
         });
 
         const range = {
@@ -3638,7 +3699,7 @@ describe('Quickurrence', () => {
 
         expect(occurrences.length).toBeGreaterThan(0);
         occurrences.forEach((occurrence) => {
-          expect(occurrence.getDate()).toBeLessThanOrEqual(15);
+          expect(utcDayOfMonth(occurrence)).toBeLessThanOrEqual(15);
         });
       });
 
@@ -3648,7 +3709,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'monthly',
           monthDay: 15,
-          condition: (date) => date.getMonth() % 2 === 0,
+          condition: (_date, parts) => parts.month % 2 === 0,
         });
 
         const range = {
@@ -3669,7 +3730,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'yearly',
-          condition: (date) => date.getFullYear() % 2 === 0,
+          condition: (_date, parts) => parts.year % 2 === 0,
         });
 
         const range = {
@@ -3684,20 +3745,23 @@ describe('Quickurrence', () => {
         expect(occurrences[1]).toEqual(new UTCDateMini('2026-03-15'));
       });
 
-      it('should receive normalized date in condition function', () => {
+      it('should receive rule-zone midnight parts in condition function', () => {
         const startDate = new UTCDateMini('2024-01-01');
-        let receivedDates: Date[] = [];
+        const receivedEpochs: number[] = [];
+        const receivedParts: ZonedParts[] = [];
 
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
           timezone: 'America/New_York',
-          condition: (date) => {
-            receivedDates.push(new Date(date));
-            expect(date.getHours()).toBe(0);
-            expect(date.getMinutes()).toBe(0);
-            expect(date.getSeconds()).toBe(0);
-            expect(date.getMilliseconds()).toBe(0);
+          condition: (date, parts) => {
+            receivedEpochs.push(date.getTime());
+            receivedParts.push(parts);
+            // The rule's calendar, not the host's: midnight in New York.
+            expect(parts.hour).toBe(0);
+            expect(parts.minute).toBe(0);
+            expect(parts.second).toBe(0);
+            expect(parts.ms).toBe(0);
             return true;
           },
         });
@@ -3709,7 +3773,18 @@ describe('Quickurrence', () => {
 
         rule.getAllOccurrences(range);
 
-        expect(receivedDates).toHaveLength(3);
+        // 2024-01-01T00:00Z is still 2023-12-31 in New York, so the rule's
+        // first day is Dec 31 and every instant is EST midnight (05:00Z).
+        expect(receivedEpochs).toEqual([
+          Date.parse('2023-12-31T05:00:00.000Z'),
+          Date.parse('2024-01-01T05:00:00.000Z'),
+          Date.parse('2024-01-02T05:00:00.000Z'),
+        ]);
+        expect(receivedParts).toEqual([
+          { year: 2023, month: 11, day: 31, weekday: 0, hour: 0, minute: 0, second: 0, ms: 0 },
+          { year: 2024, month: 0, day: 1, weekday: 1, hour: 0, minute: 0, second: 0, ms: 0 },
+          { year: 2024, month: 0, day: 2, weekday: 2, hour: 0, minute: 0, second: 0, ms: 0 },
+        ]);
       });
     });
 
@@ -3720,7 +3795,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'daily',
           excludeDates: [new UTCDateMini('2024-01-02')],
-          condition: (date) => date.getDate() % 2 === 1,
+          condition: (_date, parts) => parts.day % 2 === 1,
         });
 
         const range = {
@@ -3742,7 +3817,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'daily',
           count: 3,
-          condition: (date) => date.getDate() % 2 === 1,
+          condition: (_date, parts) => parts.day % 2 === 1,
         });
 
         const range = {
@@ -3765,7 +3840,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'daily',
           endDate,
-          condition: (date) => date.getDate() % 2 === 1,
+          condition: (_date, parts) => parts.day % 2 === 1,
         });
 
         const range = {
@@ -3787,7 +3862,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'daily',
           interval: 2,
-          condition: (date) => date.getDay() !== 0,
+          condition: (_date, parts) => parts.weekday !== 0,
         });
 
         const range = {
@@ -3799,7 +3874,7 @@ describe('Quickurrence', () => {
 
         expect(occurrences.length).toBeGreaterThan(0);
         occurrences.forEach((occurrence) => {
-          expect(occurrence.getDay()).not.toBe(0);
+          expect(utcWeekday(occurrence)).not.toBe(0);
         });
       });
     });
@@ -3810,7 +3885,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          condition: (date) => date.getDate() % 2 === 1,
+          condition: (_date, parts) => parts.day % 2 === 1,
         });
 
         const firstOccurrence = rule.getNextOccurrence(
@@ -3830,7 +3905,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'daily',
           count: 2,
-          condition: (date) => date.getDate() % 2 === 1,
+          condition: (_date, parts) => parts.day % 2 === 1,
         });
 
         const firstOccurrence = rule.getNextOccurrence(
@@ -3855,7 +3930,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'daily',
           endDate,
-          condition: (date) => date.getDate() > 5,
+          condition: (_date, parts) => parts.day > 5,
         });
 
         expect(() => {
@@ -3900,10 +3975,7 @@ describe('Quickurrence', () => {
         const rule = new Quickurrence({
           startDate,
           rule: 'daily',
-          condition: (date) => {
-            const day = date.getDay();
-            return day !== 0 && day !== 6;
-          },
+          condition: (_date, parts) => parts.weekday !== 0 && parts.weekday !== 6,
         });
 
         const range = {
@@ -3915,7 +3987,7 @@ describe('Quickurrence', () => {
 
         expect(occurrences).toHaveLength(10);
         occurrences.forEach((occurrence) => {
-          const day = occurrence.getDay();
+          const day = utcWeekday(occurrence);
           expect(day).not.toBe(0);
           expect(day).not.toBe(6);
         });
@@ -3927,10 +3999,7 @@ describe('Quickurrence', () => {
           startDate,
           rule: 'monthly',
           monthDay: 1,
-          condition: (date) => {
-            const month = date.getMonth();
-            return month >= 5 && month <= 7;
-          },
+          condition: (_date, parts) => parts.month >= 5 && parts.month <= 7,
         });
 
         const range = {
@@ -4026,7 +4095,7 @@ describe('Quickurrence', () => {
 
         expect(occurrences).toHaveLength(10);
         occurrences.forEach((occurrence) => {
-          const day = occurrence.getDay();
+          const day = utcWeekday(occurrence);
           expect(day).toBeGreaterThanOrEqual(1);
           expect(day).toBeLessThanOrEqual(5);
         });
@@ -4063,7 +4132,7 @@ describe('Quickurrence', () => {
         expect(occurrences[4]).toEqual(new UTCDateMini('2024-01-05'));
         expect(occurrences[5]).toEqual(new UTCDateMini('2024-01-08'));
         occurrences.forEach((occurrence) => {
-          const day = occurrence.getDay();
+          const day = utcWeekday(occurrence);
           expect(day).toBeGreaterThanOrEqual(1);
           expect(day).toBeLessThanOrEqual(5);
         });
@@ -4131,7 +4200,7 @@ describe('Quickurrence', () => {
 
         expect(occurrences.length).toBeGreaterThan(0);
         occurrences.forEach((occurrence) => {
-          const day = occurrence.getDay();
+          const day = utcWeekday(occurrence);
           expect(day).toBeGreaterThanOrEqual(1);
           expect(day).toBeLessThanOrEqual(5);
         });
@@ -4156,7 +4225,7 @@ describe('Quickurrence', () => {
 
         expect(occurrences).toHaveLength(6);
         occurrences.forEach((occurrence) => {
-          const day = occurrence.getDay();
+          const day = utcWeekday(occurrence);
           expect(day === 0 || day === 6).toBe(true);
         });
 
@@ -4193,7 +4262,7 @@ describe('Quickurrence', () => {
         expect(occurrences[7]).toEqual(new UTCDateMini('2024-01-28'));
         expect(occurrences[8]).toEqual(new UTCDateMini('2024-02-03'));
         occurrences.forEach((occurrence) => {
-          const day = occurrence.getDay();
+          const day = utcWeekday(occurrence);
           expect(day === 0 || day === 6).toBe(true);
         });
       });
@@ -4379,7 +4448,7 @@ describe('Quickurrence', () => {
 
         expect(occurrences.length).toBeGreaterThan(0);
         occurrences.forEach((occurrence) => {
-          const day = occurrence.getDay();
+          const day = utcWeekday(occurrence);
           expect(day).toBeGreaterThanOrEqual(1);
           expect(day).toBeLessThanOrEqual(5);
         });
@@ -4894,7 +4963,9 @@ describe('Quickurrence', () => {
         });
 
         const text = rule.toHumanText();
-        expect(text).toBe(`Weekly until ${endDate.toLocaleDateString()}`);
+        expect(text).toBe(
+          `Weekly until ${endDate.toLocaleDateString(undefined, { timeZone: 'UTC' })}`,
+        );
       });
 
       it('should generate text with complex rule and count', () => {
@@ -4922,7 +4993,7 @@ describe('Quickurrence', () => {
 
         const text = rule.toHumanText();
         expect(text).toBe(
-          `Monthly on the 15th until ${endDate.toLocaleDateString()}`,
+          `Monthly on the 15th until ${endDate.toLocaleDateString(undefined, { timeZone: 'UTC' })}`,
         );
       });
     });
@@ -4999,7 +5070,7 @@ describe('Quickurrence', () => {
 
         const text = rule.toHumanText();
         expect(text).toBe(
-          `Every 2 weeks on Monday, Wednesday until ${endDate.toLocaleDateString()}`,
+          `Every 2 weeks on Monday, Wednesday until ${endDate.toLocaleDateString(undefined, { timeZone: 'UTC' })}`,
         );
       });
 
@@ -5042,7 +5113,7 @@ describe('Quickurrence', () => {
 
         const text = Quickurrence.toHumanText(options);
         expect(text).toBe(
-          `Every 2 months on the 15th until ${endDate.toLocaleDateString()}`,
+          `Every 2 months on the 15th until ${endDate.toLocaleDateString(undefined, { timeZone: 'UTC' })}`,
         );
       });
     });
@@ -5376,7 +5447,10 @@ describe('Quickurrence', () => {
         expect(updatedOptions!.interval).toBeUndefined();
       });
 
-      it('should not include count when it is 0', () => {
+      // `count: 0` used to be filtered out of the produced options and the
+      // update silently succeeded. Filtering hid the illegal value from the
+      // schema (and dropped legal ones), so the value now reaches the schema.
+      it('should reject count 0 instead of dropping it', () => {
         const startDate = new UTCDateMini('2024-01-01');
         const originalOptions: QuickurrenceOptions = {
           startDate,
@@ -5384,12 +5458,12 @@ describe('Quickurrence', () => {
           count: 5,
         };
 
-        const updatedOptions = Quickurrence.update(originalOptions, {
-          count: 0,
-        });
-
-        expect(updatedOptions).toBeDefined();
-        expect(updatedOptions!.count).toBeUndefined();
+        const error = expectCode(
+          () => Quickurrence.update(originalOptions, { count: 0 }),
+          QuickurrenceErrorCode.INVALID_COUNT,
+        );
+        expect(error.context?.option).toBe('count');
+        expect(error.context?.value).toBe(0);
       });
 
       it('should pass timezone to updated options', () => {
@@ -5441,20 +5515,19 @@ describe('Quickurrence', () => {
         expect(updatedOptions).toBeNull();
       });
 
-      it('should handle invalid count by filtering it out', () => {
+      it('should reject a negative count instead of filtering it out', () => {
         const startDate = new UTCDateMini('2024-01-01');
         const originalOptions: QuickurrenceOptions = {
           startDate,
           rule: 'daily',
         };
 
-        // The update method filters out invalid count values (< 1)
-        const updatedOptions = Quickurrence.update(originalOptions, {
-          count: -1,
-        });
-
-        expect(updatedOptions).toBeDefined();
-        expect(updatedOptions!.count).toBeUndefined();
+        const error = expectCode(
+          () => Quickurrence.update(originalOptions, { count: -1 }),
+          QuickurrenceErrorCode.INVALID_COUNT,
+        );
+        expect(error.context?.option).toBe('count');
+        expect(error.context?.value).toBe(-1);
       });
 
       it('should clean incompatible options when updating', () => {
@@ -5927,7 +6000,7 @@ describe('Quickurrence', () => {
         const occurrences = rule.getAllOccurrences(range);
 
         occurrences.forEach((occurrence) => {
-          const dayOfWeek = occurrence.getDay();
+          const dayOfWeek = utcWeekday(occurrence);
           expect(dayOfWeek).not.toBe(0);
           expect(dayOfWeek).not.toBe(6);
           expect(dayOfWeek).toBeGreaterThanOrEqual(1);
@@ -5959,7 +6032,7 @@ describe('Quickurrence', () => {
 
         // Check that weekends ARE included (this would be the bug)
         const hasWeekends = occurrences.some((occurrence) => {
-          const day = occurrence.getDay();
+          const day = utcWeekday(occurrence);
           return day === 0 || day === 6;
         });
         expect(hasWeekends).toBe(true); // This shows the bug behavior
@@ -6009,7 +6082,7 @@ describe('Quickurrence', () => {
 
         for (let i = 0; i < 10; i++) {
           const nextOccurrence = rule.getNextOccurrence(currentDate);
-          const dayOfWeek = nextOccurrence.getDay();
+          const dayOfWeek = utcWeekday(nextOccurrence);
 
           expect(dayOfWeek).toBeGreaterThanOrEqual(1);
           expect(dayOfWeek).toBeLessThanOrEqual(5);
@@ -6038,14 +6111,14 @@ describe('Quickurrence', () => {
         );
 
         expect(nextAfterFriday).toEqual(new UTCDateMini('2024-01-08'));
-        expect(nextAfterFriday.getDay()).toBe(1); // Should be Monday, not Saturday (6) or Sunday (0)
+        expect(utcWeekday(nextAfterFriday)).toBe(1); // Should be Monday, not Saturday (6) or Sunday (0)
 
         const nextAfterMonday = rule.getNextOccurrence(
           new UTCDateMini('2024-01-08'),
         );
 
         expect(nextAfterMonday).toEqual(new UTCDateMini('2024-01-09'));
-        expect(nextAfterMonday.getDay()).toBe(2);
+        expect(utcWeekday(nextAfterMonday)).toBe(2);
       });
 
       it('should work correctly with consistent timezone usage (fixed backend approach)', () => {
@@ -6068,7 +6141,7 @@ describe('Quickurrence', () => {
 
         const nextOccurrence = quickurrence.getNextOccurrence(testDate);
 
-        expect(nextOccurrence.getDay()).toBe(4);
+        expect(utcWeekday(nextOccurrence)).toBe(4);
         expect(nextOccurrence).toEqual(new UTCDateMini('2024-01-04'));
 
         const weekDays = quickurrence.getWeekDays();
@@ -6144,7 +6217,7 @@ describe('Quickurrence', () => {
         };
         const occurrences = quickurrence.getAllOccurrences(range);
         occurrences.forEach((occurrence) => {
-          const day = occurrence.getDay();
+          const day = utcWeekday(occurrence);
           expect(day).not.toBe(0);
           expect(day).not.toBe(6);
         });
@@ -6197,22 +6270,60 @@ describe('Quickurrence', () => {
   });
 
   describe('update() schema-failure path', () => {
-    it('throws when produced options fail final schema validation', () => {
-      // Force a non-Date startDate through the cast — survives clean(), fails schema.
-      expect(() =>
-        Quickurrence.update(
-          { rule: 'daily', startDate: new Date('2026-01-01') },
-          { startDate: 'not-a-date' as unknown as Date },
-        ),
-      ).toThrowError(/Invalid quickurrence options/);
+    const base: QuickurrenceOptions = {
+      rule: 'daily',
+      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      timezone: 'UTC',
+    };
+
+    // A non-Date startDate no longer reaches the schema — it is rejected before
+    // normalization — so the branch is exercised with values that survive
+    // `clean()` and genuinely fail the final `safeParse`.
+    const schemaFailures: readonly [string, Partial<QuickurrenceOptions>, QuickurrenceErrorCode][] = [
+      ['weekStartsOn', { weekStartsOn: 9 as unknown as 0 }, QuickurrenceErrorCode.INVALID_WEEK_STARTS_ON],
+      ['interval', { interval: 0 }, QuickurrenceErrorCode.INVALID_INTERVAL],
+      ['monthDay', { monthDay: 32 as unknown as MonthDay }, QuickurrenceErrorCode.INVALID_MONTH_DAY],
+    ];
+
+    schemaFailures.forEach(([option, updates, code]) => {
+      it(`throws when produced options fail final schema validation (${option})`, () => {
+        const rule = option === 'monthDay' ? 'monthly' : 'daily';
+        const error = expectCode(
+          () => Quickurrence.update({ ...base, rule }, updates),
+          code,
+        );
+        expect(error.message).toMatch(/Invalid quickurrence options/);
+        expect(error.context?.operation).toBe('update');
+        expect(error.context?.option).toBe(option);
+        expect(error.context?.details?.issues).toBeDefined();
+      });
+    });
+
+    it('rejects a non-Date startDate before it can reach the schema', () => {
+      const error = expectCode(
+        () =>
+          Quickurrence.update(base, {
+            startDate: 'not-a-date' as unknown as Date,
+          }),
+        QuickurrenceErrorCode.INVALID_START_DATE,
+      );
+      expect(error.message).toBe('startDate must be a Date object');
+      // Not the schema branch: no zod issues, because normalization would have
+      // coerced the string into a real Date and hidden the host-timezone parse.
+      expect(error.context?.details).toBeUndefined();
     });
   });
 
   describe('presetToOptions unknown preset', () => {
     it('throws on unknown preset', () => {
-      expect(() =>
-        Quickurrence.presetToOptions('mystery' as unknown as 'businessDays'),
-      ).toThrowError(/Unknown preset/);
+      const error = expectCode(
+        () => Quickurrence.presetToOptions('mystery' as unknown as 'businessDays'),
+        QuickurrenceErrorCode.UNSUPPORTED_PRESET,
+      );
+      // Wording is matched to QuickurrenceValidator.validatePreset so the two
+      // layers report an unknown preset identically.
+      expect(error.message).toBe('Unsupported preset: mystery');
+      expect(error.context?.option).toBe('preset');
     });
   });
 
@@ -6331,6 +6442,67 @@ describe('Quickurrence', () => {
       });
       const next = rule.getNextOccurrence(new Date('2026-01-01T00:00:00Z'));
       expect(next.getTime()).toBe(new Date('2026-01-30T00:00:00Z').getTime()); // last Friday of Jan 2026
+    });
+  });
+
+  // Non-UTC rules reproduce the host-calendar bug even on a UTC host, which the
+  // UTC-rule cases above cannot cover. Expectations are written as absolute UTC
+  // instants so they hold under every TZ the suite is run with.
+  describe('nthWeekdayOfMonth — host-timezone independence', () => {
+    it('emits every second Monday for a Europe/Warsaw rule', () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new TZDate(2026, 0, 1, 'Europe/Warsaw'),
+        timezone: 'Europe/Warsaw',
+        nthWeekdayOfMonth: { weekday: 1, nth: 2 },
+      });
+      const occurrences = rule.getAllOccurrences({
+        start: new Date('2026-01-01T00:00:00Z'),
+        end: new Date('2026-06-30T23:59:59Z'),
+      });
+      expect(occurrences.map((d) => d.toISOString())).toEqual([
+        '2026-01-11T23:00:00.000Z', // Jan 12 Warsaw
+        '2026-02-08T23:00:00.000Z',
+        '2026-03-08T23:00:00.000Z',
+        '2026-04-12T22:00:00.000Z',
+        '2026-05-10T22:00:00.000Z',
+        '2026-06-07T22:00:00.000Z',
+      ]);
+    });
+
+    it('finds the last Saturday of January for an America/Los_Angeles rule', () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new TZDate(2026, 0, 1, 'America/Los_Angeles'),
+        timezone: 'America/Los_Angeles',
+        nthWeekdayOfMonth: { weekday: 6, nth: 'last' },
+      });
+      const occurrences = rule.getAllOccurrences({
+        start: new Date('2026-01-01T00:00:00Z'),
+        end: new Date('2026-01-31T23:59:59Z'),
+      });
+      expect(occurrences.map((d) => d.toISOString())).toEqual([
+        '2026-01-31T08:00:00.000Z',
+      ]);
+    });
+
+    it('finds the first Saturday of each month for an America/Los_Angeles rule', () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate: new TZDate(2026, 0, 1, 'America/Los_Angeles'),
+        timezone: 'America/Los_Angeles',
+        nthWeekdayOfMonth: { weekday: 6, nth: 1 },
+      });
+      const occurrences = rule.getAllOccurrences({
+        start: new Date('2026-01-01T00:00:00Z'),
+        end: new Date('2026-04-30T23:59:59Z'),
+      });
+      expect(occurrences.map((d) => d.toISOString())).toEqual([
+        '2026-01-03T08:00:00.000Z',
+        '2026-02-07T08:00:00.000Z',
+        '2026-03-07T08:00:00.000Z',
+        '2026-04-04T07:00:00.000Z',
+      ]);
     });
   });
 
@@ -6467,6 +6639,2931 @@ describe('Quickurrence', () => {
         weekDays: [1, 3, 5],
       });
       expect(text).toMatch(/Monday/);
+    });
+  });
+
+  // Every expectation below is an absolute UTC instant computed by hand, never
+  // read back from the implementation, so any host timezone that leaks its own
+  // DST gap into the rule timezone's wall clock turns these red. The chosen
+  // dates are the spring-forward days of the hosts that have historically
+  // broken this library (2026-03-08 for America/Havana, 2024-03-31 and
+  // 2026-03-29 for Atlantic/Azores and Asia/Beirut, 2024-04-26 for
+  // Africa/Cairo).
+  describe('host-timezone independence — wall-clock primitive', () => {
+    const iso = (dates: Date[]) => dates.map((d) => d.toISOString());
+
+    describe('monthly monthDay landing on a host spring-forward day', () => {
+      it('resolves monthDay 8 on 2026-03-08 for a UTC rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          monthDay: 8,
+          startDate: new Date('2026-02-08T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        expect(
+          rule.getNextOccurrence(new Date('2026-02-08T00:00:00.000Z')).toISOString(),
+        ).toBe('2026-03-08T00:00:00.000Z');
+      });
+
+      it('resolves monthDay 31 on 2024-03-31 and 2026-03-29 for a UTC rule', () => {
+        const in2024 = new Quickurrence({
+          rule: 'monthly',
+          monthDay: 31,
+          startDate: new Date('2024-03-01T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        expect(
+          in2024.getNextOccurrence(new Date('2024-03-01T00:00:00.000Z')).toISOString(),
+        ).toBe('2024-03-31T00:00:00.000Z');
+
+        const in2026 = new Quickurrence({
+          rule: 'monthly',
+          monthDay: 29,
+          startDate: new Date('2026-03-01T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        expect(
+          in2026.getNextOccurrence(new Date('2026-03-01T00:00:00.000Z')).toISOString(),
+        ).toBe('2026-03-29T00:00:00.000Z');
+      });
+
+      it('clamps monthDay 31 to the last day of shorter months for a UTC rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          monthDay: 31,
+          startDate: new Date('2024-01-31T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        expect(
+          iso(
+            rule.getAllOccurrences({
+              start: new Date('2024-01-01T00:00:00.000Z'),
+              end: new Date('2024-04-30T00:00:00.000Z'),
+            }),
+          ),
+        ).toEqual([
+          '2024-01-31T00:00:00.000Z',
+          '2024-02-29T00:00:00.000Z',
+          '2024-03-31T00:00:00.000Z',
+          '2024-04-30T00:00:00.000Z',
+        ]);
+      });
+
+      it('resolves monthDay 31 in the rule timezone across the CET->CEST switch', () => {
+        const in2024 = new Quickurrence({
+          rule: 'monthly',
+          monthDay: 31,
+          startDate: new Date('2024-03-01T00:00:00.000Z'),
+          timezone: 'Europe/Warsaw',
+        });
+        // Warsaw is still CET (+01:00) at midnight on 2024-03-31.
+        expect(in2024.getNextOccurrence(new Date('2024-03-01T00:00:00.000Z')).getTime()).toBe(
+          Date.parse('2024-03-30T23:00:00.000Z'),
+        );
+
+        const in2026 = new Quickurrence({
+          rule: 'monthly',
+          monthDay: 31,
+          startDate: new Date('2026-03-01T00:00:00.000Z'),
+          timezone: 'Europe/Warsaw',
+        });
+        // Warsaw is already CEST (+02:00) at midnight on 2026-03-31.
+        expect(in2026.getNextOccurrence(new Date('2026-03-01T00:00:00.000Z')).getTime()).toBe(
+          Date.parse('2026-03-30T22:00:00.000Z'),
+        );
+      });
+
+      it('resolves monthDay 26 on 2024-04-26 for a UTC rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          monthDay: 26,
+          startDate: new Date('2024-03-26T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        expect(
+          rule.getNextOccurrence(new Date('2024-03-26T00:00:00.000Z')).toISOString(),
+        ).toBe('2024-04-26T00:00:00.000Z');
+      });
+    });
+
+    describe("nthWeekdayOfMonth 'last'", () => {
+      it('finds the last Sunday of March 2024 and March 2026 for a UTC rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          nthWeekdayOfMonth: { weekday: 0, nth: 'last' },
+          startDate: new Date('2024-03-01T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        expect(
+          rule.getNextOccurrence(new Date('2024-03-01T00:00:00.000Z')).toISOString(),
+        ).toBe('2024-03-31T00:00:00.000Z');
+
+        const later = new Quickurrence({
+          rule: 'monthly',
+          nthWeekdayOfMonth: { weekday: 0, nth: 'last' },
+          startDate: new Date('2026-03-01T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        expect(
+          later.getNextOccurrence(new Date('2026-03-01T00:00:00.000Z')).toISOString(),
+        ).toBe('2026-03-29T00:00:00.000Z');
+      });
+
+      it('finds the last Sunday of April 2024 for a UTC rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          nthWeekdayOfMonth: { weekday: 0, nth: 'last' },
+          startDate: new Date('2024-04-01T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        expect(
+          rule.getNextOccurrence(new Date('2024-04-01T00:00:00.000Z')).toISOString(),
+        ).toBe('2024-04-28T00:00:00.000Z');
+      });
+    });
+
+    describe('timesOfDay expansion', () => {
+      it('keeps a midnight slot at midnight on 2026-03-08 for a UTC rule', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new Date('2026-03-08T00:00:00.000Z'),
+          timezone: 'UTC',
+          timesOfDay: ['00:00', '01:00'],
+        });
+        expect(
+          iso(
+            rule.getAllOccurrences({
+              start: new Date('2026-03-08T00:00:00.000Z'),
+              end: new Date('2026-03-08T23:59:59.999Z'),
+            }),
+          ).map((s) => Date.parse(s)),
+        ).toEqual([
+          Date.parse('2026-03-08T00:00:00.000Z'),
+          Date.parse('2026-03-08T01:00:00.000Z'),
+        ]);
+      });
+
+      it('resolves a slot inside the rule timezone gap with the post-transition offset', () => {
+        // Warsaw skips 02:00->03:00 on 2026-03-29, so 02:30 does not exist that
+        // day; the documented policy applies the post-transition offset, which
+        // lands on 01:30 CET.
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new Date('2026-03-28T00:00:00.000Z'),
+          timezone: 'Europe/Warsaw',
+          timesOfDay: ['02:30'],
+        });
+        const slots = rule.getAllOccurrences({
+          start: new Date('2026-03-28T00:00:00.000Z'),
+          end: new Date('2026-03-30T00:00:00.000Z'),
+        });
+        expect(slots.map((d) => d.getTime())).toEqual([
+          Date.parse('2026-03-28T01:30:00.000Z'),
+          Date.parse('2026-03-29T00:30:00.000Z'),
+        ]);
+      });
+    });
+
+    describe('cursors across the Warsaw CET->CEST switch', () => {
+      it('steps a daily cursor over 2026-03-29', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new Date('2026-03-26T23:00:00.000Z'),
+          timezone: 'Europe/Warsaw',
+        });
+        const out = rule.getAllOccurrences({
+          start: new Date('2026-03-26T23:00:00.000Z'),
+          end: new Date('2026-03-30T22:00:00.000Z'),
+        });
+        expect(out.map((d) => d.getTime())).toEqual([
+          Date.parse('2026-03-26T23:00:00.000Z'),
+          Date.parse('2026-03-27T23:00:00.000Z'),
+          Date.parse('2026-03-28T23:00:00.000Z'),
+          Date.parse('2026-03-29T22:00:00.000Z'),
+          Date.parse('2026-03-30T22:00:00.000Z'),
+        ]);
+      });
+
+      it('steps a weekly cursor over 2026-03-29', () => {
+        const rule = new Quickurrence({
+          rule: 'weekly',
+          startDate: new Date('2026-03-14T23:00:00.000Z'),
+          timezone: 'Europe/Warsaw',
+        });
+        const out = rule.getAllOccurrences({
+          start: new Date('2026-03-14T23:00:00.000Z'),
+          end: new Date('2026-04-04T22:00:00.000Z'),
+        });
+        expect(out.map((d) => d.getTime())).toEqual([
+          Date.parse('2026-03-14T23:00:00.000Z'),
+          Date.parse('2026-03-21T23:00:00.000Z'),
+          Date.parse('2026-03-28T23:00:00.000Z'),
+          Date.parse('2026-04-04T22:00:00.000Z'),
+        ]);
+      });
+    });
+
+    describe('month arithmetic clamping', () => {
+      it('clamps a 2-month step from Jan 31 onto Mar 31', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          interval: 2,
+          startDate: new Date('2024-01-31T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        expect(
+          rule.getNextOccurrence(new Date('2024-01-31T00:00:00.000Z')).getTime(),
+        ).toBe(Date.parse('2024-03-31T00:00:00.000Z'));
+      });
+
+      it('clamps repeated 1-month steps from Jan 31', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new Date('2024-01-31T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        expect(
+          rule
+            .getAllOccurrences({
+              start: new Date('2024-01-01T00:00:00.000Z'),
+              end: new Date('2024-04-30T00:00:00.000Z'),
+            })
+            .map((d) => d.toISOString()),
+        ).toEqual([
+          '2024-01-31T00:00:00.000Z',
+          '2024-02-29T00:00:00.000Z',
+          '2024-03-29T00:00:00.000Z',
+          '2024-04-29T00:00:00.000Z',
+        ]);
+      });
+
+      it('clamps a 200-month step from 2024-03-31 onto 2040-11-30', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          interval: 200,
+          startDate: new Date('2024-03-31T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        expect(
+          rule.getNextOccurrence(new Date('2024-03-31T00:00:00.000Z')).getTime(),
+        ).toBe(Date.parse('2040-11-30T00:00:00.000Z'));
+      });
+
+      it('clamps a yearly step from Feb 29 onto Feb 28', () => {
+        const rule = new Quickurrence({
+          rule: 'yearly',
+          startDate: new Date('2024-02-29T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        expect(
+          rule.getNextOccurrence(new Date('2024-02-29T00:00:00.000Z')).toISOString(),
+        ).toBe('2025-02-28T00:00:00.000Z');
+      });
+    });
+
+    describe('serialization of returned dates', () => {
+      it('keeps a trailing Z on the raw monthDay escape path for a UTC rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          monthDay: 15,
+          startDate: new Date('2026-06-10T00:00:00.000Z'),
+          timezone: 'UTC',
+        });
+        const before = new Date('2026-01-01T00:00:00.000Z');
+        expect(rule.getNextOccurrence(before).toISOString().endsWith('Z')).toBe(
+          true,
+        );
+        expect(rule.getNextOccurrence(before).toISOString()).toBe(
+          '2026-06-15T00:00:00.000Z',
+        );
+      });
+
+      it('serializes END_DATE_EXCEEDED endDate metadata as UTC for a UTC timesOfDay rule', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new Date('2026-01-01T00:00:00.000Z'),
+          timezone: 'UTC',
+          timesOfDay: ['09:00'],
+          endDate: new Date('2026-01-03T23:59:59.999Z'),
+        });
+        try {
+          rule.getNextOccurrence(new Date('2026-01-10T00:00:00.000Z'));
+          throw new Error('should have thrown');
+        } catch (error) {
+          const details = (error as { context?: { details?: { endDate?: Date } } })
+            .context?.details;
+          expect(JSON.stringify(details?.endDate)).toMatch(/Z"$/);
+        }
+      });
+    });
+
+    describe('toHumanText endDate formatting', () => {
+      const endDate = new Date('2026-03-15T00:00:00.000Z');
+      const rule = new Quickurrence({
+        rule: 'weekly',
+        startDate: new Date('2026-01-01T00:00:00.000Z'),
+        timezone: 'UTC',
+        endDate,
+      });
+
+      it('formats endDate in the rule timezone using the host locale', () => {
+        expect(rule.toHumanText().endsWith(
+          endDate.toLocaleDateString(undefined, { timeZone: 'UTC' }),
+        )).toBe(true);
+      });
+
+      // Whether the locale is hardcoded cannot be decided in-process on an
+      // en-US host, so that half is covered by the CI job that runs the suite
+      // under LC_ALL=de_DE.UTF-8: there, the test above fails if 'en-US' is
+      // pinned. What IS decidable here is the timezone half — the calendar day
+      // must come from the rule timezone, not from UTC or from the host.
+      it('renders the endDate calendar day of the rule timezone', () => {
+        const newYorkRule = new Quickurrence({
+          rule: 'weekly',
+          startDate: new Date('2026-01-01T00:00:00.000Z'),
+          timezone: 'America/New_York',
+          endDate,
+        });
+        // 2026-03-15T00:00Z is still 2026-03-14 in New York.
+        expect(
+          newYorkRule
+            .toHumanText()
+            .endsWith(
+              endDate.toLocaleDateString(undefined, {
+                timeZone: 'America/New_York',
+              }),
+            ),
+        ).toBe(true);
+        expect(
+          newYorkRule
+            .toHumanText()
+            .endsWith(
+              endDate.toLocaleDateString(undefined, { timeZone: 'UTC' }),
+            ),
+        ).toBe(false);
+      });
+    });
+  });
+
+  describe('Timezone identifier validation', () => {
+    const startDate = new Date('2026-01-01T00:00:00.000Z');
+    // Syntactically a valid IANA name, so string-shape checks accept it; only
+    // the runtime's tz database knows it does not exist.
+    const unknownZone = 'Mars/Phobos';
+
+    it('rejects a well-formed but nonexistent timezone', () => {
+      expect(
+        () => new Quickurrence({ rule: 'daily', startDate, timezone: unknownZone }),
+      ).toThrow(QuickurrenceError);
+    });
+
+    it('reports INVALID_TIMEZONE instead of leaking a bare RangeError', () => {
+      try {
+        new Quickurrence({ rule: 'daily', startDate, timezone: unknownZone });
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(QuickurrenceError);
+        expect(err).not.toBeInstanceOf(RangeError);
+        expect((err as QuickurrenceError).code).toBe(
+          QuickurrenceErrorCode.INVALID_TIMEZONE,
+        );
+      }
+    });
+
+    it('rejects it on the default-startDate path with the same code', () => {
+      try {
+        new Quickurrence({ rule: 'daily', timezone: unknownZone });
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(QuickurrenceError);
+        expect(err).not.toBeInstanceOf(RangeError);
+        // Blaming startDate here would send the caller after the wrong option.
+        expect((err as QuickurrenceError).code).toBe(
+          QuickurrenceErrorCode.INVALID_TIMEZONE,
+        );
+      }
+    });
+
+    it('rejects it when occurrences are generated', () => {
+      expect(() => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate,
+          timezone: unknownZone,
+        });
+        rule.getAllOccurrences({
+          start: startDate,
+          end: new Date('2026-01-03T00:00:00.000Z'),
+        });
+      }).toThrow(QuickurrenceError);
+    });
+  });
+
+  describe('Years 0-99', () => {
+    // Date.UTC remaps years 0-99 onto 1900-1999, so a year-50 rule is the
+    // regression fixture for any wall-clock-to-epoch conversion that forgot it.
+    const startDate = new Date('0050-01-01T00:00:00.000Z');
+    const iso = (date: Date) => new Date(date.getTime()).toISOString();
+
+    it('parses the fixture as year 50, not 1950', () => {
+      expect(startDate.getUTCFullYear()).toBe(50);
+    });
+
+    it('keeps daily occurrences in year 50', () => {
+      const rule = new Quickurrence({ rule: 'daily', startDate, timezone: 'UTC' });
+      const occurrences = rule.getAllOccurrences({
+        start: startDate,
+        end: new Date('0050-01-03T00:00:00.000Z'),
+      });
+      expect(occurrences.map(iso)).toEqual([
+        '0050-01-01T00:00:00.000Z',
+        '0050-01-02T00:00:00.000Z',
+        '0050-01-03T00:00:00.000Z',
+      ]);
+    });
+
+    it('keeps timesOfDay expansion in year 50', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate,
+        timezone: 'UTC',
+        timesOfDay: ['09:00'],
+      });
+      const occurrences = rule.getAllOccurrences({
+        start: startDate,
+        end: new Date('0050-01-02T23:59:59.999Z'),
+      });
+      expect(occurrences.map(iso)).toEqual([
+        '0050-01-01T09:00:00.000Z',
+        '0050-01-02T09:00:00.000Z',
+      ]);
+    });
+
+    it('keeps a monthly step in year 50', () => {
+      const rule = new Quickurrence({
+        rule: 'monthly',
+        startDate,
+        monthDay: 1,
+        timezone: 'UTC',
+      });
+      expect(iso(rule.getNextOccurrence(startDate))).toBe(
+        '0050-02-01T00:00:00.000Z',
+      );
+    });
+
+    it('keeps a yearly step in year 99 without rolling into 1900', () => {
+      const year99 = new Date('0099-03-15T00:00:00.000Z');
+      const rule = new Quickurrence({
+        rule: 'yearly',
+        startDate: year99,
+        timezone: 'UTC',
+      });
+      expect(iso(rule.getNextOccurrence(year99))).toBe(
+        '0100-03-15T00:00:00.000Z',
+      );
+    });
+  });
+
+  // Everything below uses a NON-UTC rule timezone. A UTC-rule assertion is
+  // satisfied by any implementation that happens to agree with UTC, so the
+  // 421-zone host sweep proves nothing about the rule-zone wall clock; only a
+  // rule whose zone differs from UTC can catch an offset applied in the wrong
+  // direction. Every expected instant is an absolute epoch derived by hand from
+  // the rule zone's offset at that date (comments give the rule-zone wall
+  // clock), never read back from the implementation, and `getTime()` is compared
+  // rather than `toISOString()` because a TZDate renders in its own zone and can
+  // print the same string for two different epochs.
+  describe('Non-UTC rule timezone coverage', () => {
+    const WARSAW = 'Europe/Warsaw';
+    const NY = 'America/New_York';
+    const CHATHAM = 'Pacific/Chatham';
+    const epochs = (dates: Date[]) => dates.map((date) => date.getTime());
+
+    describe('yearly', () => {
+      it('anchors a Warsaw July yearly rule to CEST midnight every year', () => {
+        const rule = new Quickurrence({
+          rule: 'yearly',
+          startDate: new TZDate(2024, 6, 15, WARSAW),
+          timezone: WARSAW,
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2024-01-01T00:00:00Z'),
+              end: new Date('2027-12-31T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2024-07-14T22:00:00.000Z'), // 2024-07-15 00:00 +02:00
+          Date.parse('2025-07-14T22:00:00.000Z'), // 2025-07-15 00:00 +02:00
+          Date.parse('2026-07-14T22:00:00.000Z'), // 2026-07-15 00:00 +02:00
+          Date.parse('2027-07-14T22:00:00.000Z'), // 2027-07-15 00:00 +02:00
+        ]);
+      });
+
+      it('anchors a Warsaw January yearly rule to CET midnight every year', () => {
+        const rule = new Quickurrence({
+          rule: 'yearly',
+          startDate: new TZDate(2024, 0, 15, WARSAW),
+          timezone: WARSAW,
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2024-01-01T00:00:00Z'),
+              end: new Date('2026-12-31T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2024-01-14T23:00:00.000Z'), // 2024-01-15 00:00 +01:00
+          Date.parse('2025-01-14T23:00:00.000Z'), // 2025-01-15 00:00 +01:00
+          Date.parse('2026-01-14T23:00:00.000Z'), // 2026-01-15 00:00 +01:00
+        ]);
+      });
+
+      it('honours interval 2 for a Warsaw yearly rule', () => {
+        const rule = new Quickurrence({
+          rule: 'yearly',
+          startDate: new TZDate(2024, 6, 15, WARSAW),
+          timezone: WARSAW,
+          interval: 2,
+        });
+        expect(
+          rule.getNextOccurrence(new TZDate(2024, 6, 15, WARSAW)).getTime(),
+        ).toBe(Date.parse('2026-07-14T22:00:00.000Z')); // 2026-07-15 00:00
+      });
+
+      it('anchors a Pacific/Chatham yearly rule to +12:45 midnight', () => {
+        const rule = new Quickurrence({
+          rule: 'yearly',
+          startDate: new TZDate(2024, 6, 15, CHATHAM),
+          timezone: CHATHAM,
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2024-01-01T00:00:00Z'),
+              end: new Date('2026-12-31T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2024-07-14T11:15:00.000Z'), // 2024-07-15 00:00 +12:45
+          Date.parse('2025-07-14T11:15:00.000Z'), // 2025-07-15 00:00 +12:45
+          Date.parse('2026-07-14T11:15:00.000Z'), // 2026-07-15 00:00 +12:45
+        ]);
+      });
+    });
+
+    describe('count', () => {
+      it('counts five Warsaw days across the CET->CEST switch', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new TZDate(2026, 2, 27, WARSAW),
+          timezone: WARSAW,
+          count: 5,
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-03-01T00:00:00Z'),
+              end: new Date('2026-04-30T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-03-26T23:00:00.000Z'), // 2026-03-27 00:00 +01:00
+          Date.parse('2026-03-27T23:00:00.000Z'), // 2026-03-28 00:00 +01:00
+          Date.parse('2026-03-28T23:00:00.000Z'), // 2026-03-29 00:00 +01:00
+          Date.parse('2026-03-29T22:00:00.000Z'), // 2026-03-30 00:00 +02:00
+          Date.parse('2026-03-30T22:00:00.000Z'), // 2026-03-31 00:00 +02:00
+        ]);
+      });
+
+      it('counts three New York weeks across the EST->EDT switch', () => {
+        const rule = new Quickurrence({
+          rule: 'weekly',
+          startDate: new TZDate(2026, 2, 2, NY),
+          timezone: NY,
+          count: 3,
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-03-01T00:00:00Z'),
+              end: new Date('2026-04-30T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-03-02T05:00:00.000Z'), // 2026-03-02 00:00 -05:00
+          Date.parse('2026-03-09T04:00:00.000Z'), // 2026-03-09 00:00 -04:00
+          Date.parse('2026-03-16T04:00:00.000Z'), // 2026-03-16 00:00 -04:00
+        ]);
+      });
+
+      it('throws COUNT_LIMIT_EXCEEDED past a Warsaw rule count', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new TZDate(2026, 2, 27, WARSAW),
+          timezone: WARSAW,
+          count: 2,
+        });
+        try {
+          rule.getNextOccurrence(new TZDate(2026, 2, 29, WARSAW));
+          throw new Error('should have thrown');
+        } catch (err) {
+          expect(err).toBeInstanceOf(QuickurrenceError);
+          expect((err as QuickurrenceError).code).toBe(
+            QuickurrenceErrorCode.COUNT_LIMIT_EXCEEDED,
+          );
+        }
+      });
+
+      it('reports the count through the getter for a Warsaw rule', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new TZDate(2026, 2, 27, WARSAW),
+          timezone: WARSAW,
+          count: 5,
+        });
+        expect(rule.getCount()).toBe(5);
+      });
+    });
+
+    describe('excludeDates', () => {
+      const warsawDaily = (excludeDates?: Date[]) =>
+        new Quickurrence({
+          rule: 'daily',
+          startDate: new TZDate(2026, 2, 27, WARSAW),
+          timezone: WARSAW,
+          excludeDates,
+        });
+      const range = {
+        start: new Date('2026-03-26T23:00:00Z'),
+        end: new Date('2026-03-31T21:00:00Z'),
+      };
+
+      it('emits every Warsaw day when nothing is excluded', () => {
+        expect(epochs(warsawDaily().getAllOccurrences(range))).toEqual([
+          Date.parse('2026-03-26T23:00:00.000Z'), // 2026-03-27 00:00 +01:00
+          Date.parse('2026-03-27T23:00:00.000Z'), // 2026-03-28 00:00 +01:00
+          Date.parse('2026-03-28T23:00:00.000Z'), // 2026-03-29 00:00 +01:00
+          Date.parse('2026-03-29T22:00:00.000Z'), // 2026-03-30 00:00 +02:00
+          Date.parse('2026-03-30T22:00:00.000Z'), // 2026-03-31 00:00 +02:00
+        ]);
+      });
+
+      it('matches an excluded mid-day instant at Warsaw day level', () => {
+        // 12:00Z on 2026-03-29 is mid-afternoon in Warsaw, so a day-level
+        // exclusion has to drop the whole Warsaw day, not an exact instant.
+        const rule = warsawDaily([new Date('2026-03-29T12:00:00Z')]);
+        expect(epochs(rule.getAllOccurrences(range))).toEqual([
+          Date.parse('2026-03-26T23:00:00.000Z'), // 2026-03-27 00:00
+          Date.parse('2026-03-27T23:00:00.000Z'), // 2026-03-28 00:00
+          Date.parse('2026-03-29T22:00:00.000Z'), // 2026-03-30 00:00
+          Date.parse('2026-03-30T22:00:00.000Z'), // 2026-03-31 00:00
+        ]);
+      });
+
+      it('normalizes excludeDates to Warsaw midnight, not UTC midnight', () => {
+        const rule = warsawDaily([new Date('2026-03-29T12:00:00Z')]);
+        expect(epochs(rule.getExcludeDates() ?? [])).toEqual([
+          Date.parse('2026-03-28T23:00:00.000Z'), // 2026-03-29 00:00 +01:00
+        ]);
+      });
+
+      it('skips the excluded Warsaw day in getNextOccurrence', () => {
+        const rule = warsawDaily([new Date('2026-03-29T12:00:00Z')]);
+        expect(
+          rule.getNextOccurrence(new TZDate(2026, 2, 28, WARSAW)).getTime(),
+        ).toBe(Date.parse('2026-03-29T22:00:00.000Z')); // 2026-03-30 00:00
+      });
+
+      it('resolves the excluded day in the rule zone, not in UTC', () => {
+        // 2026-01-05T23:00Z is 18:00 on Jan 5 in New York but already Jan 6 in
+        // UTC; a UTC-day match would drop the wrong occurrence.
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new TZDate(2026, 0, 1, NY),
+          timezone: NY,
+          excludeDates: [new Date('2026-01-05T23:00:00Z')],
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-01-08T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-01T05:00:00.000Z'), // 2026-01-01 00:00 -05:00
+          Date.parse('2026-01-02T05:00:00.000Z'), // 2026-01-02 00:00
+          Date.parse('2026-01-03T05:00:00.000Z'), // 2026-01-03 00:00
+          Date.parse('2026-01-04T05:00:00.000Z'), // 2026-01-04 00:00
+          // 2026-01-05 excluded
+          Date.parse('2026-01-06T05:00:00.000Z'), // 2026-01-06 00:00
+          Date.parse('2026-01-07T05:00:00.000Z'), // 2026-01-07 00:00
+        ]);
+      });
+    });
+
+    // weekStartsOn only becomes observable once the interval skips weeks: it
+    // decides which rule-zone day the alternating week buckets start on, so a
+    // Sunday-start and a Monday-start rule select different dates from the same
+    // weekDays list.
+    describe('weekStartsOn', () => {
+      const warsawFortnightly = (weekStartsOn: 0 | 1) =>
+        new Quickurrence({
+          rule: 'weekly',
+          interval: 2,
+          startDate: new TZDate(2026, 0, 7, WARSAW), // Wed 2026-01-07
+          timezone: WARSAW,
+          weekStartsOn,
+          weekDays: [0, 3], // Sunday, Wednesday
+        }).getAllOccurrences({
+          start: new Date('2026-01-01T00:00:00Z'),
+          end: new Date('2026-02-10T00:00:00Z'),
+        });
+
+      it('buckets alternating Warsaw weeks from Sunday', () => {
+        expect(epochs(warsawFortnightly(0))).toEqual([
+          Date.parse('2026-01-06T23:00:00.000Z'), // Wed 2026-01-07 00:00 +01:00
+          Date.parse('2026-01-17T23:00:00.000Z'), // Sun 2026-01-18 00:00
+          Date.parse('2026-01-20T23:00:00.000Z'), // Wed 2026-01-21 00:00
+          Date.parse('2026-01-31T23:00:00.000Z'), // Sun 2026-02-01 00:00
+          Date.parse('2026-02-03T23:00:00.000Z'), // Wed 2026-02-04 00:00
+        ]);
+      });
+
+      it('buckets alternating Warsaw weeks from Monday', () => {
+        expect(epochs(warsawFortnightly(1))).toEqual([
+          Date.parse('2026-01-06T23:00:00.000Z'), // Wed 2026-01-07 00:00 +01:00
+          Date.parse('2026-01-10T23:00:00.000Z'), // Sun 2026-01-11 00:00
+          Date.parse('2026-01-20T23:00:00.000Z'), // Wed 2026-01-21 00:00
+          Date.parse('2026-01-24T23:00:00.000Z'), // Sun 2026-01-25 00:00
+          Date.parse('2026-02-03T23:00:00.000Z'), // Wed 2026-02-04 00:00
+          Date.parse('2026-02-07T23:00:00.000Z'), // Sun 2026-02-08 00:00
+        ]);
+      });
+
+      it('defaults to Monday for a Warsaw rule', () => {
+        const rule = new Quickurrence({
+          rule: 'weekly',
+          startDate: new TZDate(2026, 0, 7, WARSAW),
+          timezone: WARSAW,
+        });
+        expect(rule.getWeekStartsOn()).toBe(1);
+      });
+
+      const chathamFortnightly = (weekStartsOn: 0 | 1) =>
+        new Quickurrence({
+          rule: 'weekly',
+          interval: 2,
+          startDate: new TZDate(2026, 3, 1, CHATHAM), // Wed 2026-04-01
+          timezone: CHATHAM,
+          weekStartsOn,
+          weekDays: [0, 3],
+        }).getAllOccurrences({
+          start: new Date('2026-03-25T00:00:00Z'),
+          end: new Date('2026-05-01T00:00:00Z'),
+        });
+
+      it('buckets alternating Chatham weeks from Sunday across the DST end', () => {
+        expect(epochs(chathamFortnightly(0))).toEqual([
+          Date.parse('2026-03-31T10:15:00.000Z'), // Wed 2026-04-01 00:00 +13:45
+          Date.parse('2026-04-11T11:15:00.000Z'), // Sun 2026-04-12 00:00 +12:45
+          Date.parse('2026-04-14T11:15:00.000Z'), // Wed 2026-04-15 00:00 +12:45
+          Date.parse('2026-04-25T11:15:00.000Z'), // Sun 2026-04-26 00:00 +12:45
+          Date.parse('2026-04-28T11:15:00.000Z'), // Wed 2026-04-29 00:00 +12:45
+        ]);
+      });
+
+      it('buckets alternating Chatham weeks from Monday across the DST end', () => {
+        expect(epochs(chathamFortnightly(1))).toEqual([
+          Date.parse('2026-03-31T10:15:00.000Z'), // Wed 2026-04-01 00:00 +13:45
+          Date.parse('2026-04-04T10:15:00.000Z'), // Sun 2026-04-05 00:00 +13:45
+          Date.parse('2026-04-14T11:15:00.000Z'), // Wed 2026-04-15 00:00 +12:45
+          Date.parse('2026-04-18T11:15:00.000Z'), // Sun 2026-04-19 00:00 +12:45
+          Date.parse('2026-04-28T11:15:00.000Z'), // Wed 2026-04-29 00:00 +12:45
+        ]);
+      });
+    });
+
+    describe('nthWeekdayOfMonth nth 3 and nth 4', () => {
+      it('finds the 3rd Wednesday of each month for a Warsaw rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 1, WARSAW),
+          timezone: WARSAW,
+          nthWeekdayOfMonth: { weekday: 3, nth: 3 },
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-06-30T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-20T23:00:00.000Z'), // 2026-01-21 00:00 +01:00
+          Date.parse('2026-02-17T23:00:00.000Z'), // 2026-02-18 00:00 +01:00
+          Date.parse('2026-03-17T23:00:00.000Z'), // 2026-03-18 00:00 +01:00
+          Date.parse('2026-04-14T22:00:00.000Z'), // 2026-04-15 00:00 +02:00
+          Date.parse('2026-05-19T22:00:00.000Z'), // 2026-05-20 00:00 +02:00
+          Date.parse('2026-06-16T22:00:00.000Z'), // 2026-06-17 00:00 +02:00
+        ]);
+      });
+
+      it('finds the 4th Sunday of each month for a Warsaw rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 1, WARSAW),
+          timezone: WARSAW,
+          nthWeekdayOfMonth: { weekday: 0, nth: 4 },
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-06-30T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-24T23:00:00.000Z'), // 2026-01-25 00:00 +01:00
+          Date.parse('2026-02-21T23:00:00.000Z'), // 2026-02-22 00:00 +01:00
+          Date.parse('2026-03-21T23:00:00.000Z'), // 2026-03-22 00:00 +01:00
+          Date.parse('2026-04-25T22:00:00.000Z'), // 2026-04-26 00:00 +02:00
+          Date.parse('2026-05-23T22:00:00.000Z'), // 2026-05-24 00:00 +02:00
+          Date.parse('2026-06-27T22:00:00.000Z'), // 2026-06-28 00:00 +02:00
+        ]);
+      });
+
+      it('finds the 4th Tuesday of each month for a Chatham rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 2, 1, CHATHAM),
+          timezone: CHATHAM,
+          nthWeekdayOfMonth: { weekday: 2, nth: 4 },
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-03-01T00:00:00Z'),
+              end: new Date('2026-05-31T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-03-23T10:15:00.000Z'), // 2026-03-24 00:00 +13:45
+          Date.parse('2026-04-27T11:15:00.000Z'), // 2026-04-28 00:00 +12:45
+          Date.parse('2026-05-25T11:15:00.000Z'), // 2026-05-26 00:00 +12:45
+        ]);
+      });
+    });
+
+    describe('condition', () => {
+      // The predicate receives the occurrence instant, so a Warsaw day-level
+      // occurrence is 23:00Z in winter and 22:00Z in summer. Filtering on the
+      // UTC hour therefore selects exactly the CEST days.
+      const isCestMidnight = (date: Date) => date.getUTCHours() === 22;
+      const range = {
+        start: new Date('2026-03-27T00:00:00Z'),
+        end: new Date('2026-04-02T00:00:00Z'),
+      };
+
+      it('passes the rule-zone instant to a function condition', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new TZDate(2026, 2, 27, WARSAW),
+          timezone: WARSAW,
+          condition: isCestMidnight,
+        });
+        expect(epochs(rule.getAllOccurrences(range))).toEqual([
+          Date.parse('2026-03-29T22:00:00.000Z'), // 2026-03-30 00:00 +02:00
+          Date.parse('2026-03-30T22:00:00.000Z'), // 2026-03-31 00:00 +02:00
+          Date.parse('2026-03-31T22:00:00.000Z'), // 2026-04-01 00:00 +02:00
+          Date.parse('2026-04-01T22:00:00.000Z'), // 2026-04-02 00:00 +02:00
+        ]);
+      });
+
+      it('yields nothing for a false condition on a Warsaw rule', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new TZDate(2026, 2, 27, WARSAW),
+          timezone: WARSAW,
+          condition: false,
+        });
+        expect(rule.getAllOccurrences(range)).toEqual([]);
+      });
+
+      it('skips condition-rejected Warsaw days in getNextOccurrence', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new TZDate(2026, 2, 27, WARSAW),
+          timezone: WARSAW,
+          condition: isCestMidnight,
+        });
+        expect(
+          rule.getNextOccurrence(new TZDate(2026, 2, 27, WARSAW)).getTime(),
+        ).toBe(Date.parse('2026-03-29T22:00:00.000Z')); // 2026-03-30 00:00
+      });
+    });
+
+    describe('monthDay', () => {
+      it('skips months without day 29 for a Warsaw rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 29, WARSAW),
+          timezone: WARSAW,
+          monthDay: 29,
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-05-31T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-28T23:00:00.000Z'), // 2026-01-29 00:00 +01:00
+          Date.parse('2026-02-27T23:00:00.000Z'), // 2026-02-28 00:00 +01:00
+          Date.parse('2026-03-28T23:00:00.000Z'), // 2026-03-29 00:00 +01:00
+          Date.parse('2026-04-28T22:00:00.000Z'), // 2026-04-29 00:00 +02:00
+          Date.parse('2026-05-28T22:00:00.000Z'), // 2026-05-29 00:00 +02:00
+        ]);
+      });
+
+      it("clamps monthDay 31 with mode 'last' for a Warsaw rule", () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 31, WARSAW),
+          timezone: WARSAW,
+          monthDay: 31,
+          monthDayMode: 'last',
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-04-30T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-30T23:00:00.000Z'), // 2026-01-31 00:00 +01:00
+          Date.parse('2026-02-27T23:00:00.000Z'), // 2026-02-28 00:00 +01:00
+          Date.parse('2026-03-30T22:00:00.000Z'), // 2026-03-31 00:00 +02:00
+          Date.parse('2026-04-29T22:00:00.000Z'), // 2026-04-30 00:00 +02:00
+        ]);
+      });
+
+      it('resolves monthDay 15 for a Chatham rule across the DST end', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 2, 15, CHATHAM),
+          timezone: CHATHAM,
+          monthDay: 15,
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-03-01T00:00:00Z'),
+              end: new Date('2026-05-31T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-03-14T10:15:00.000Z'), // 2026-03-15 00:00 +13:45
+          Date.parse('2026-04-14T11:15:00.000Z'), // 2026-04-15 00:00 +12:45
+          Date.parse('2026-05-14T11:15:00.000Z'), // 2026-05-15 00:00 +12:45
+        ]);
+      });
+    });
+
+    // `skip` is the only monthDay mode that DROPS a month, so the month length
+    // it consults has to be the one seen from the rule timezone. Havana is the
+    // sharpest probe: it is west of UTC, so a local midnight always lands on a
+    // LATER UTC instant, and its DST jump happens at local midnight itself.
+    // Warsaw is east of UTC, so its local midnight lands on the PREVIOUS UTC
+    // day — the opposite sign of the same mistake.
+    describe("monthDayMode 'skip'", () => {
+      const HAVANA = 'America/Havana';
+
+      it('drops exactly the sub-31-day months for a Havana rule across a year', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 31, HAVANA),
+          timezone: HAVANA,
+          monthDay: 31,
+          monthDayMode: 'skip',
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-12-31T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-31T05:00:00.000Z'), // 2026-01-31 00:00 -05:00 CST
+          Date.parse('2026-03-31T04:00:00.000Z'), // 2026-03-31 00:00 -04:00 CDT
+          Date.parse('2026-05-31T04:00:00.000Z'), // 2026-05-31 00:00 -04:00 CDT
+          Date.parse('2026-07-31T04:00:00.000Z'), // 2026-07-31 00:00 -04:00 CDT
+          Date.parse('2026-08-31T04:00:00.000Z'), // 2026-08-31 00:00 -04:00 CDT
+          Date.parse('2026-10-31T04:00:00.000Z'), // 2026-10-31 00:00 -04:00 CDT
+          Date.parse('2026-12-31T05:00:00.000Z'), // 2026-12-31 00:00 -05:00 CST
+        ]);
+      });
+
+      it('drops exactly the sub-31-day months for a Warsaw rule across a year', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 31, WARSAW),
+          timezone: WARSAW,
+          monthDay: 31,
+          monthDayMode: 'skip',
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-12-31T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-30T23:00:00.000Z'), // 2026-01-31 00:00 +01:00 CET
+          Date.parse('2026-03-30T22:00:00.000Z'), // 2026-03-31 00:00 +02:00 CEST
+          Date.parse('2026-05-30T22:00:00.000Z'), // 2026-05-31 00:00 +02:00 CEST
+          Date.parse('2026-07-30T22:00:00.000Z'), // 2026-07-31 00:00 +02:00 CEST
+          Date.parse('2026-08-30T22:00:00.000Z'), // 2026-08-31 00:00 +02:00 CEST
+          Date.parse('2026-10-30T23:00:00.000Z'), // 2026-10-31 00:00 +01:00 CET
+          Date.parse('2026-12-30T23:00:00.000Z'), // 2026-12-31 00:00 +01:00 CET
+        ]);
+      });
+
+      it('drops February for monthDay 30 under a Havana rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 30, HAVANA),
+          timezone: HAVANA,
+          monthDay: 30,
+          monthDayMode: 'skip',
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-04-30T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-30T05:00:00.000Z'), // 2026-01-30 00:00 -05:00 CST
+          Date.parse('2026-03-30T04:00:00.000Z'), // 2026-03-30 00:00 -04:00 CDT
+          Date.parse('2026-04-30T04:00:00.000Z'), // 2026-04-30 00:00 -04:00 CDT
+        ]);
+      });
+
+      it('drops February for monthDay 30 under a Warsaw rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 30, WARSAW),
+          timezone: WARSAW,
+          monthDay: 30,
+          monthDayMode: 'skip',
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-04-30T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-29T23:00:00.000Z'), // 2026-01-30 00:00 +01:00 CET
+          Date.parse('2026-03-29T22:00:00.000Z'), // 2026-03-30 00:00 +02:00 CEST
+          Date.parse('2026-04-29T22:00:00.000Z'), // 2026-04-30 00:00 +02:00 CEST
+        ]);
+      });
+
+      it('keeps February for monthDay 29 in a leap year under a Havana rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2024, 0, 29, HAVANA),
+          timezone: HAVANA,
+          monthDay: 29,
+          monthDayMode: 'skip',
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2024-01-01T00:00:00Z'),
+              end: new Date('2024-04-30T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2024-01-29T05:00:00.000Z'), // 2024-01-29 00:00 -05:00 CST
+          Date.parse('2024-02-29T05:00:00.000Z'), // 2024-02-29 00:00 -05:00 CST
+          Date.parse('2024-03-29T04:00:00.000Z'), // 2024-03-29 00:00 -04:00 CDT
+          Date.parse('2024-04-29T04:00:00.000Z'), // 2024-04-29 00:00 -04:00 CDT
+        ]);
+      });
+
+      it('drops February for monthDay 29 in a non-leap year under a Havana rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 29, HAVANA),
+          timezone: HAVANA,
+          monthDay: 29,
+          monthDayMode: 'skip',
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-04-30T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-29T05:00:00.000Z'), // 2026-01-29 00:00 -05:00 CST
+          Date.parse('2026-03-29T04:00:00.000Z'), // 2026-03-29 00:00 -04:00 CDT
+          Date.parse('2026-04-29T04:00:00.000Z'), // 2026-04-29 00:00 -04:00 CDT
+        ]);
+      });
+
+      it('keeps then drops February for monthDay 29 across a Warsaw leap boundary', () => {
+        const leap = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2024, 1, 1, WARSAW),
+          timezone: WARSAW,
+          monthDay: 29,
+          monthDayMode: 'skip',
+        });
+        expect(
+          epochs(
+            leap.getAllOccurrences({
+              start: new Date('2024-02-01T00:00:00Z'),
+              end: new Date('2024-02-29T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2024-02-28T23:00:00.000Z'), // 2024-02-29 00:00 +01:00 CET
+        ]);
+
+        const nonLeap = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 1, 1, WARSAW),
+          timezone: WARSAW,
+          monthDay: 29,
+          monthDayMode: 'skip',
+        });
+        expect(
+          epochs(
+            nonLeap.getAllOccurrences({
+              start: new Date('2026-02-01T00:00:00Z'),
+              end: new Date('2026-02-28T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([]);
+      });
+
+      it("resolves the first existing instant of the day when Havana's DST jump removes local midnight", () => {
+        // Havana starts DST at 00:00 local on 2026-03-08: the clock goes
+        // straight from 23:59:59 -05:00 to 01:00:00 -04:00, so 00:00 never
+        // occurs and the day's first instant is 01:00 CDT = 05:00Z.
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 8, HAVANA),
+          timezone: HAVANA,
+          monthDay: 8,
+          monthDayMode: 'skip',
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-04-30T23:59:59Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-08T05:00:00.000Z'), // 2026-01-08 00:00 -05:00 CST
+          Date.parse('2026-02-08T05:00:00.000Z'), // 2026-02-08 00:00 -05:00 CST
+          Date.parse('2026-03-08T05:00:00.000Z'), // 2026-03-08 01:00 -04:00 CDT
+          Date.parse('2026-04-08T04:00:00.000Z'), // 2026-04-08 00:00 -04:00 CDT
+        ]);
+      });
+
+      it('jumps over February from getNextOccurrence under a Havana rule', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 31, HAVANA),
+          timezone: HAVANA,
+          monthDay: 31,
+          monthDayMode: 'skip',
+        });
+        expect(
+          rule.getNextOccurrence(new TZDate(2026, 1, 15, HAVANA)).getTime(),
+        ).toBe(Date.parse('2026-03-31T04:00:00.000Z')); // 2026-03-31 00:00 -04:00
+      });
+
+      // The pair below is the whole point of the option: identical input, one
+      // character of difference in the mode, two different answers.
+      it("differs from 'last' on the same Havana input", () => {
+        const options = {
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 31, HAVANA),
+          timezone: HAVANA,
+          monthDay: 31,
+        } as const;
+        const range = {
+          start: new Date('2026-01-01T00:00:00Z'),
+          end: new Date('2026-04-30T23:59:59Z'),
+        };
+
+        expect(
+          epochs(
+            new Quickurrence({
+              ...options,
+              monthDayMode: 'skip',
+            }).getAllOccurrences(range),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-31T05:00:00.000Z'), // 2026-01-31 00:00 -05:00 CST
+          Date.parse('2026-03-31T04:00:00.000Z'), // 2026-03-31 00:00 -04:00 CDT
+        ]);
+
+        expect(
+          epochs(
+            new Quickurrence({
+              ...options,
+              monthDayMode: 'last',
+            }).getAllOccurrences(range),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-31T05:00:00.000Z'), // 2026-01-31 00:00 -05:00 CST
+          Date.parse('2026-02-28T05:00:00.000Z'), // 2026-02-28 00:00 -05:00 CST
+          Date.parse('2026-03-31T04:00:00.000Z'), // 2026-03-31 00:00 -04:00 CDT
+          Date.parse('2026-04-30T04:00:00.000Z'), // 2026-04-30 00:00 -04:00 CDT
+        ]);
+      });
+
+      it("differs from 'last' on the same Warsaw input", () => {
+        const options = {
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 31, WARSAW),
+          timezone: WARSAW,
+          monthDay: 31,
+        } as const;
+        const range = {
+          start: new Date('2026-01-01T00:00:00Z'),
+          end: new Date('2026-04-30T23:59:59Z'),
+        };
+
+        expect(
+          epochs(
+            new Quickurrence({
+              ...options,
+              monthDayMode: 'skip',
+            }).getAllOccurrences(range),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-30T23:00:00.000Z'), // 2026-01-31 00:00 +01:00 CET
+          Date.parse('2026-03-30T22:00:00.000Z'), // 2026-03-31 00:00 +02:00 CEST
+        ]);
+
+        expect(
+          epochs(
+            new Quickurrence({
+              ...options,
+              monthDayMode: 'last',
+            }).getAllOccurrences(range),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-30T23:00:00.000Z'), // 2026-01-31 00:00 +01:00 CET
+          Date.parse('2026-02-27T23:00:00.000Z'), // 2026-02-28 00:00 +01:00 CET
+          Date.parse('2026-03-30T22:00:00.000Z'), // 2026-03-31 00:00 +02:00 CEST
+          Date.parse('2026-04-29T22:00:00.000Z'), // 2026-04-30 00:00 +02:00 CEST
+        ]);
+      });
+    });
+
+    describe('weekDays', () => {
+      it('emits Mon/Wed/Fri across the Warsaw spring-forward weekend', () => {
+        const rule = new Quickurrence({
+          rule: 'weekly',
+          startDate: new TZDate(2026, 2, 23, WARSAW), // Mon 2026-03-23
+          timezone: WARSAW,
+          weekDays: [1, 3, 5],
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-03-23T00:00:00Z'),
+              end: new Date('2026-04-04T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-03-22T23:00:00.000Z'), // Mon 2026-03-23 00:00 +01:00
+          Date.parse('2026-03-24T23:00:00.000Z'), // Wed 2026-03-25 00:00 +01:00
+          Date.parse('2026-03-26T23:00:00.000Z'), // Fri 2026-03-27 00:00 +01:00
+          Date.parse('2026-03-29T22:00:00.000Z'), // Mon 2026-03-30 00:00 +02:00
+          Date.parse('2026-03-31T22:00:00.000Z'), // Wed 2026-04-01 00:00 +02:00
+          Date.parse('2026-04-02T22:00:00.000Z'), // Fri 2026-04-03 00:00 +02:00
+        ]);
+      });
+
+      it('emits Sundays across the New York fall-back weekend', () => {
+        const rule = new Quickurrence({
+          rule: 'weekly',
+          startDate: new TZDate(2026, 9, 25, NY), // Sun 2026-10-25
+          timezone: NY,
+          weekDays: [0],
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-10-25T00:00:00Z'),
+              end: new Date('2026-11-16T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-10-25T04:00:00.000Z'), // 2026-10-25 00:00 -04:00
+          Date.parse('2026-11-01T04:00:00.000Z'), // 2026-11-01 00:00 -04:00
+          Date.parse('2026-11-08T05:00:00.000Z'), // 2026-11-08 00:00 -05:00
+          Date.parse('2026-11-15T05:00:00.000Z'), // 2026-11-15 00:00 -05:00
+        ]);
+      });
+
+      it('emits Tue/Sat across the Lord Howe 30-minute DST end', () => {
+        const rule = new Quickurrence({
+          rule: 'weekly',
+          startDate: new TZDate(2026, 2, 31, 'Australia/Lord_Howe'), // Tue
+          timezone: 'Australia/Lord_Howe',
+          weekDays: [2, 6],
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-03-30T00:00:00Z'),
+              end: new Date('2026-04-12T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-03-30T13:00:00.000Z'), // Tue 2026-03-31 00:00 +11:00
+          Date.parse('2026-04-03T13:00:00.000Z'), // Sat 2026-04-04 00:00 +11:00
+          Date.parse('2026-04-06T13:30:00.000Z'), // Tue 2026-04-07 00:00 +10:30
+          Date.parse('2026-04-10T13:30:00.000Z'), // Sat 2026-04-11 00:00 +10:30
+        ]);
+      });
+    });
+
+    describe('toHumanText', () => {
+      it('renders endDate in the Warsaw rule zone, not in UTC', () => {
+        // 23:30Z on 2026-03-15 is already 2026-03-16 in Warsaw, so a UTC
+        // rendering names the wrong day.
+        const endDate = new Date('2026-03-15T23:30:00Z');
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new TZDate(2026, 0, 1, WARSAW),
+          timezone: WARSAW,
+          endDate,
+        });
+        const inWarsaw = endDate.toLocaleDateString(undefined, {
+          timeZone: WARSAW,
+        });
+        const inUtc = endDate.toLocaleDateString(undefined, {
+          timeZone: 'UTC',
+        });
+        expect(inWarsaw).not.toBe(inUtc);
+        expect(rule.toHumanText()).toBe(`Daily until ${inWarsaw}`);
+      });
+
+      it('renders endDate in a Pacific/Kiritimati rule zone', () => {
+        const endDate = new Date('2026-03-15T11:00:00Z');
+        const rule = new Quickurrence({
+          rule: 'weekly',
+          startDate: new TZDate(2026, 0, 1, 'Pacific/Kiritimati'),
+          timezone: 'Pacific/Kiritimati',
+          weekDays: [2, 4],
+          endDate,
+        });
+        const inKiritimati = endDate.toLocaleDateString(undefined, {
+          timeZone: 'Pacific/Kiritimati',
+        });
+        expect(inKiritimati).not.toBe(
+          endDate.toLocaleDateString(undefined, { timeZone: 'UTC' }),
+        );
+        expect(rule.toHumanText()).toBe(
+          `Weekly on Tuesday, Thursday until ${inKiritimati}`,
+        );
+      });
+
+      it('describes an nth-weekday Lord Howe rule with a count terminator', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 1, 'Australia/Lord_Howe'),
+          timezone: 'Australia/Lord_Howe',
+          nthWeekdayOfMonth: { weekday: 4, nth: 3 },
+          count: 6,
+        });
+        expect(rule.toHumanText()).toBe('Monthly on the 3rd Thursday, 6 times');
+      });
+    });
+
+    // Rule zones whose offset is not a whole number of hours: an implementation
+    // that rounds to hours, or that reuses the host's minute field, lands 15 or
+    // 30 minutes off. Lord Howe additionally shifts by only 30 minutes for DST.
+    describe('non-integral rule-timezone offsets', () => {
+      it('keeps a 09:00 Lord Howe slot across the +11:00 -> +10:30 switch', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new Date('2026-04-03T00:00:00Z'),
+          timezone: 'Australia/Lord_Howe',
+          timesOfDay: ['09:00'],
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-04-03T00:00:00Z'),
+              end: new Date('2026-04-07T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-04-03T22:00:00.000Z'), // 2026-04-04 09:00 +11:00
+          Date.parse('2026-04-04T22:30:00.000Z'), // 2026-04-05 09:00 +10:30
+          Date.parse('2026-04-05T22:30:00.000Z'), // 2026-04-06 09:00 +10:30
+          Date.parse('2026-04-06T22:30:00.000Z'), // 2026-04-07 09:00 +10:30
+        ]);
+      });
+
+      it('keeps Lord Howe day-level midnights across the DST end', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new TZDate(2026, 3, 3, 'Australia/Lord_Howe'),
+          timezone: 'Australia/Lord_Howe',
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-04-02T00:00:00Z'),
+              end: new Date('2026-04-07T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-04-02T13:00:00.000Z'), // 2026-04-03 00:00 +11:00
+          Date.parse('2026-04-03T13:00:00.000Z'), // 2026-04-04 00:00 +11:00
+          Date.parse('2026-04-04T13:00:00.000Z'), // 2026-04-05 00:00 +11:00
+          Date.parse('2026-04-05T13:30:00.000Z'), // 2026-04-06 00:00 +10:30
+          Date.parse('2026-04-06T13:30:00.000Z'), // 2026-04-07 00:00 +10:30
+        ]);
+      });
+
+      it('keeps a 09:00 Chatham slot across the +13:45 -> +12:45 switch', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new Date('2026-04-03T00:00:00Z'),
+          timezone: CHATHAM,
+          timesOfDay: ['09:00'],
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-04-03T00:00:00Z'),
+              end: new Date('2026-04-07T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-04-03T19:15:00.000Z'), // 2026-04-04 09:00 +13:45
+          Date.parse('2026-04-04T20:15:00.000Z'), // 2026-04-05 09:00 +12:45
+          Date.parse('2026-04-05T20:15:00.000Z'), // 2026-04-06 09:00 +12:45
+          Date.parse('2026-04-06T20:15:00.000Z'), // 2026-04-07 09:00 +12:45
+        ]);
+      });
+
+      it('keeps Chatham day-level midnights across the DST end', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new TZDate(2026, 3, 3, CHATHAM),
+          timezone: CHATHAM,
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-04-02T00:00:00Z'),
+              end: new Date('2026-04-07T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-04-02T10:15:00.000Z'), // 2026-04-03 00:00 +13:45
+          Date.parse('2026-04-03T10:15:00.000Z'), // 2026-04-04 00:00 +13:45
+          Date.parse('2026-04-04T10:15:00.000Z'), // 2026-04-05 00:00 +13:45
+          Date.parse('2026-04-05T11:15:00.000Z'), // 2026-04-06 00:00 +12:45
+          Date.parse('2026-04-06T11:15:00.000Z'), // 2026-04-07 00:00 +12:45
+        ]);
+      });
+
+      it('resolves monthDay 15 at the Kathmandu +05:45 offset', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2026, 0, 15, 'Asia/Kathmandu'),
+          timezone: 'Asia/Kathmandu',
+          monthDay: 15,
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-04-30T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-14T18:15:00.000Z'), // 2026-01-15 00:00 +05:45
+          Date.parse('2026-02-14T18:15:00.000Z'), // 2026-02-15 00:00 +05:45
+          Date.parse('2026-03-14T18:15:00.000Z'), // 2026-03-15 00:00 +05:45
+          Date.parse('2026-04-14T18:15:00.000Z'), // 2026-04-15 00:00 +05:45
+        ]);
+      });
+
+      it('orders Kathmandu slots that straddle UTC midnight by rule-zone day', () => {
+        const rule = new Quickurrence({
+          rule: 'daily',
+          startDate: new Date('2026-01-01T00:00:00Z'),
+          timezone: 'Asia/Kathmandu',
+          timesOfDay: ['00:15', '23:45'],
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2026-01-01T00:00:00Z'),
+              end: new Date('2026-01-03T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2026-01-01T18:00:00.000Z'), // 2026-01-01 23:45 +05:45
+          Date.parse('2026-01-01T18:30:00.000Z'), // 2026-01-02 00:15 +05:45
+          Date.parse('2026-01-02T18:00:00.000Z'), // 2026-01-02 23:45 +05:45
+          Date.parse('2026-01-02T18:30:00.000Z'), // 2026-01-03 00:15 +05:45
+        ]);
+      });
+    });
+
+    // The leap-year cases elsewhere in this file all use a UTC rule, so nothing
+    // pinned the clamp under a zone whose offset changes between the anchor
+    // month and the clamped one.
+    describe('leap year under a DST rule timezone', () => {
+      it('clamps a Feb 29 Warsaw yearly rule onto Feb 28 forever', () => {
+        const rule = new Quickurrence({
+          rule: 'yearly',
+          startDate: new TZDate(2024, 1, 29, WARSAW),
+          timezone: WARSAW,
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2024-01-01T00:00:00Z'),
+              end: new Date('2029-01-01T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2024-02-28T23:00:00.000Z'), // 2024-02-29 00:00 +01:00
+          Date.parse('2025-02-27T23:00:00.000Z'), // 2025-02-28 00:00 +01:00
+          Date.parse('2026-02-27T23:00:00.000Z'), // 2026-02-28 00:00 +01:00
+          Date.parse('2027-02-27T23:00:00.000Z'), // 2027-02-28 00:00 +01:00
+          // 2028 is a leap year, but the clamped anchor stays on Feb 28.
+          Date.parse('2028-02-27T23:00:00.000Z'), // 2028-02-28 00:00 +01:00
+        ]);
+      });
+
+      it('clamps the first step of a Feb 29 Warsaw yearly rule', () => {
+        const rule = new Quickurrence({
+          rule: 'yearly',
+          startDate: new TZDate(2024, 1, 29, WARSAW),
+          timezone: WARSAW,
+        });
+        expect(
+          rule.getNextOccurrence(new TZDate(2024, 1, 29, WARSAW)).getTime(),
+        ).toBe(Date.parse('2025-02-27T23:00:00.000Z')); // 2025-02-28 00:00
+      });
+
+      it('walks a Feb 29 Warsaw monthly rule through the CET->CEST switch', () => {
+        const rule = new Quickurrence({
+          rule: 'monthly',
+          startDate: new TZDate(2024, 1, 29, WARSAW),
+          timezone: WARSAW,
+          monthDay: 29,
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2024-01-01T00:00:00Z'),
+              end: new Date('2024-06-01T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2024-02-28T23:00:00.000Z'), // 2024-02-29 00:00 +01:00
+          Date.parse('2024-03-28T23:00:00.000Z'), // 2024-03-29 00:00 +01:00
+          Date.parse('2024-04-28T22:00:00.000Z'), // 2024-04-29 00:00 +02:00
+          Date.parse('2024-05-28T22:00:00.000Z'), // 2024-05-29 00:00 +02:00
+        ]);
+      });
+
+      it('clamps a Feb 29 Chatham yearly rule at +13:45', () => {
+        const rule = new Quickurrence({
+          rule: 'yearly',
+          startDate: new TZDate(2024, 1, 29, CHATHAM),
+          timezone: CHATHAM,
+        });
+        expect(
+          epochs(
+            rule.getAllOccurrences({
+              start: new Date('2024-01-01T00:00:00Z'),
+              end: new Date('2027-01-01T00:00:00Z'),
+            }),
+          ),
+        ).toEqual([
+          Date.parse('2024-02-28T10:15:00.000Z'), // 2024-02-29 00:00 +13:45
+          Date.parse('2025-02-27T10:15:00.000Z'), // 2025-02-28 00:00 +13:45
+          Date.parse('2026-02-27T10:15:00.000Z'), // 2026-02-28 00:00 +13:45
+        ]);
+      });
+    });
+  });
+
+  // Non-finite instants used to reach Intl.DateTimeFormat.formatToParts and
+  // surface as a bare `RangeError: Invalid time value`. The invariant this
+  // block exists to protect is that no bare RangeError ever escapes, and every
+  // test below asserts it. What happens instead splits by input kind: an
+  // Invalid *Date* is a real Date and degrades (collection yields nothing,
+  // getNextOccurrence returns an invalid Date or a coded error), while
+  // malformed *options* are rejected with a coded QuickurrenceError up front.
+  describe('Invalid instants degrade instead of throwing RangeError', () => {
+    const startDate = new Date('2026-01-01T00:00:00.000Z');
+    const invalid = new Date('not-a-date');
+    const daily = (extra: Partial<QuickurrenceOptions> = {}) =>
+      new Quickurrence({ rule: 'daily', startDate, timezone: 'UTC', ...extra });
+    const wideRange = {
+      start: startDate,
+      end: new Date('2026-01-31T00:00:00.000Z'),
+    };
+
+    it('returns [] when range.end is an Invalid Date', () => {
+      expect(
+        daily().getAllOccurrences({ start: startDate, end: invalid }),
+      ).toEqual([]);
+    });
+
+    it('returns [] when range.start is an Invalid Date', () => {
+      expect(
+        daily().getAllOccurrences({
+          start: invalid,
+          end: new Date('2026-01-05T00:00:00.000Z'),
+        }),
+      ).toEqual([]);
+    });
+
+    it('returns [] when both range bounds are Invalid Dates', () => {
+      expect(
+        daily().getAllOccurrences({ start: invalid, end: invalid }),
+      ).toEqual([]);
+    });
+
+    it('returns [] for an Invalid range.end under a non-UTC rule too', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: new TZDate(2026, 0, 1, 'Europe/Warsaw'),
+        timezone: 'Europe/Warsaw',
+      });
+      expect(
+        rule.getAllOccurrences({ start: startDate, end: invalid }),
+      ).toEqual([]);
+    });
+
+    it('does not throw a RangeError for an Invalid range.end', () => {
+      expect(() =>
+        daily().getAllOccurrences({ start: startDate, end: invalid }),
+      ).not.toThrow();
+    });
+
+    // Malformed OPTIONS are a different case from an Invalid Date, and the two
+    // are deliberately split: an Invalid Date is a legitimate `Date` and
+    // degrades (above), while a weekday that is not a weekday is a broken rule
+    // and is now rejected at construction with a code, instead of silently
+    // producing nothing. Both halves still guarantee no bare RangeError.
+    it('rejects non-numeric weekDays entries at construction', () => {
+      expectCode(
+        () =>
+          new Quickurrence({
+            rule: 'weekly',
+            startDate,
+            timezone: 'UTC',
+            weekDays: ['Monday', 'Wednesday', 'Friday'] as unknown as WeekDay[],
+          }),
+        QuickurrenceErrorCode.INVALID_WEEKDAYS,
+      );
+    });
+
+    it('rejects non-numeric weekDays before getNextOccurrence is reachable', () => {
+      const build = () =>
+        new Quickurrence({
+          rule: 'weekly',
+          startDate,
+          timezone: 'UTC',
+          weekDays: ['Monday', 'Wednesday', 'Friday'] as unknown as WeekDay[],
+        });
+
+      const error = expectCode(build, QuickurrenceErrorCode.INVALID_WEEKDAYS);
+      expect(error.message).toBe(
+        'Invalid weekDays values: Monday, Wednesday, Friday. Values must be between 0-6',
+      );
+      // The instance never exists, so the old END_DATE_EXCEEDED fallback that
+      // stood in for "the engine produced nothing" is now unreachable.
+      expect(error.code).not.toBe(QuickurrenceErrorCode.END_DATE_EXCEEDED);
+    });
+
+    it('rejects a NaN weekDays entry at construction', () => {
+      expectCode(
+        () =>
+          new Quickurrence({
+            rule: 'weekly',
+            startDate,
+            timezone: 'UTC',
+            weekDays: [Number.NaN] as unknown as WeekDay[],
+          }),
+        QuickurrenceErrorCode.INVALID_WEEKDAYS,
+      );
+    });
+
+    it('rejects non-numeric weekDays combined with timesOfDay at construction', () => {
+      expectCode(
+        () =>
+          new Quickurrence({
+            rule: 'weekly',
+            startDate,
+            timezone: 'UTC',
+            weekDays: ['Monday'] as unknown as WeekDay[],
+            timesOfDay: ['09:00'],
+          }),
+        QuickurrenceErrorCode.INVALID_WEEKDAYS,
+      );
+    });
+
+    it('rejects a non-numeric nthWeekdayOfMonth.weekday at construction', () => {
+      const error = expectCode(
+        () =>
+          new Quickurrence({
+            rule: 'monthly',
+            startDate,
+            timezone: 'UTC',
+            nthWeekdayOfMonth: { weekday: 'Mon' as unknown as WeekDay, nth: 1 },
+          }),
+        QuickurrenceErrorCode.INVALID_NTH_WEEKDAY,
+      );
+      expect(error.context?.option).toBe('nthWeekdayOfMonth.weekday');
+    });
+
+    it('rejects a non-numeric nthWeekdayOfMonth.weekday before getNextOccurrence is reachable', () => {
+      const error = expectCode(
+        () =>
+          new Quickurrence({
+            rule: 'monthly',
+            startDate,
+            timezone: 'UTC',
+            nthWeekdayOfMonth: { weekday: 'Mon' as unknown as WeekDay, nth: 1 },
+          }),
+        QuickurrenceErrorCode.INVALID_NTH_WEEKDAY,
+      );
+      expect(error.message).toBe(
+        'Invalid weekday in nthWeekdayOfMonth: Mon. Weekday must be between 0-6',
+      );
+      expect(error.code).not.toBe(QuickurrenceErrorCode.END_DATE_EXCEEDED);
+    });
+
+    it('returns an invalid Date for getNextOccurrence(Invalid Date)', () => {
+      const next = daily().getNextOccurrence(invalid);
+      expect(next).toBeInstanceOf(Date);
+      expect(Number.isNaN(next.getTime())).toBe(true);
+    });
+
+    it('reports INVALID_EXCLUDE_DATES for an Invalid Date in excludeDates', () => {
+      try {
+        daily({ excludeDates: [invalid] }).getAllOccurrences({
+          start: startDate,
+          end: new Date('2026-01-04T00:00:00.000Z'),
+        });
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(QuickurrenceError);
+        expect(err).not.toBeInstanceOf(RangeError);
+        expect((err as QuickurrenceError).code).toBe(
+          QuickurrenceErrorCode.INVALID_EXCLUDE_DATES,
+        );
+      }
+    });
+  });
+
+  // `@date-fns/tz` no longer reaches the public surface: every returned value
+  // and every Date inside an error's context is a plain `Date`. `instanceof
+  // Date` is not enough to prove that — a TZDate subclasses Date and passes it
+  // — so the constructor identity is compared instead.
+  describe('Every public value is a plain Date', () => {
+    const WARSAW = 'Europe/Warsaw';
+    const startDate = new Date('2026-06-10T00:00:00.000Z');
+    const before = new Date('2026-01-01T00:00:00.000Z');
+
+    // The shapes below all used to return a TZDate from getNextOccurrence.
+    const dayLevelShapes: Array<[string, QuickurrenceOptions]> = [
+      ['daily', { rule: 'daily', startDate, timezone: 'UTC' }],
+      ['daily under a non-UTC rule', { rule: 'daily', startDate, timezone: WARSAW }],
+      ['weekly without weekDays', { rule: 'weekly', startDate, timezone: 'UTC' }],
+      [
+        'weekly without weekDays under a non-UTC rule',
+        { rule: 'weekly', startDate, timezone: WARSAW },
+      ],
+      ['monthly without monthDay', { rule: 'monthly', startDate, timezone: 'UTC' }],
+      [
+        'monthly without monthDay under a non-UTC rule',
+        { rule: 'monthly', startDate, timezone: WARSAW },
+      ],
+      ['yearly', { rule: 'yearly', startDate, timezone: 'UTC' }],
+      ['yearly under a non-UTC rule', { rule: 'yearly', startDate, timezone: WARSAW }],
+    ];
+
+    for (const [label, options] of dayLevelShapes) {
+      it(`returns a plain Date from getNextOccurrence for ${label}`, () => {
+        const next = new Quickurrence(options).getNextOccurrence(before);
+        expect(next.constructor).toBe(Date);
+        expect(next.toISOString().endsWith('Z')).toBe(true);
+      });
+    }
+
+    // `after` before the rule's startDate short-circuits to the start date (or
+    // to the first matching day in its month), a separate return path per shape.
+    describe('the after-before-startDate early return', () => {
+      const futureStart = new Date('2030-06-10T00:00:00.000Z');
+      const wayBefore = new Date('2029-01-01T00:00:00.000Z');
+      const earlyReturnShapes: Array<[string, QuickurrenceOptions]> = [
+        ['daily', { rule: 'daily', startDate: futureStart, timezone: 'UTC' }],
+        [
+          'daily under a non-UTC rule',
+          { rule: 'daily', startDate: futureStart, timezone: WARSAW },
+        ],
+        [
+          'weekly with weekDays',
+          { rule: 'weekly', startDate: futureStart, timezone: 'UTC', weekDays: [1, 3] },
+        ],
+        [
+          'weekly with weekDays under a non-UTC rule',
+          { rule: 'weekly', startDate: futureStart, timezone: WARSAW, weekDays: [1, 3] },
+        ],
+        [
+          'monthly with monthDay',
+          { rule: 'monthly', startDate: futureStart, timezone: 'UTC', monthDay: 15 },
+        ],
+        [
+          'monthly with monthDay under a non-UTC rule',
+          { rule: 'monthly', startDate: futureStart, timezone: WARSAW, monthDay: 15 },
+        ],
+        [
+          'monthly with nthWeekdayOfMonth',
+          {
+            rule: 'monthly',
+            startDate: futureStart,
+            timezone: 'UTC',
+            nthWeekdayOfMonth: { weekday: 1, nth: 2 },
+          },
+        ],
+        [
+          'monthly with nthWeekdayOfMonth under a non-UTC rule',
+          {
+            rule: 'monthly',
+            startDate: futureStart,
+            timezone: WARSAW,
+            nthWeekdayOfMonth: { weekday: 1, nth: 2 },
+          },
+        ],
+        ['yearly', { rule: 'yearly', startDate: futureStart, timezone: 'UTC' }],
+        [
+          'yearly under a non-UTC rule',
+          { rule: 'yearly', startDate: futureStart, timezone: WARSAW },
+        ],
+      ];
+
+      for (const [label, options] of earlyReturnShapes) {
+        it(`returns a plain Date for ${label}`, () => {
+          const next = new Quickurrence(options).getNextOccurrence(wayBefore);
+          expect(next.constructor).toBe(Date);
+          expect(next.toISOString().endsWith('Z')).toBe(true);
+        });
+      }
+    });
+
+    it('returns plain Dates from getAllOccurrences under a non-UTC rule', () => {
+      const occurrences = new Quickurrence({
+        rule: 'daily',
+        startDate,
+        timezone: WARSAW,
+      }).getAllOccurrences({
+        start: startDate,
+        end: new Date('2026-06-14T00:00:00.000Z'),
+      });
+
+      expect(occurrences.length).toBeGreaterThan(0);
+      occurrences.forEach((occurrence) => {
+        expect(occurrence.constructor).toBe(Date);
+        expect(occurrence.toISOString().endsWith('Z')).toBe(true);
+      });
+    });
+
+    it('serializes a non-UTC rule occurrence with a trailing Z', () => {
+      // 2026-06-11 00:00 CEST is 2026-06-10T22:00Z: the offset must show up in
+      // the epoch, never in the rendered suffix.
+      const next = new Quickurrence({
+        rule: 'daily',
+        startDate: new Date('2026-06-10T22:00:00.000Z'),
+        timezone: WARSAW,
+      }).getNextOccurrence(new Date('2026-06-10T22:00:00.000Z'));
+
+      expect(next.toISOString()).toBe('2026-06-11T22:00:00.000Z');
+    });
+
+    it('carries a plain Date in the day-level end-date guard details', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate,
+        timezone: WARSAW,
+        endDate: new Date('2026-06-20T00:00:00.000Z'),
+      });
+
+      try {
+        rule.getNextOccurrence(new Date('2026-07-01T00:00:00.000Z'));
+        throw new Error('should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(QuickurrenceError);
+        expect((error as QuickurrenceError).code).toBe(
+          QuickurrenceErrorCode.END_DATE_EXCEEDED,
+        );
+        const details = (error as QuickurrenceError).context?.details as {
+          endDate: Date;
+          currentDate: Date;
+        };
+        expect(details.currentDate.constructor).toBe(Date);
+        expect(details.endDate.constructor).toBe(Date);
+        expect(JSON.stringify(details.currentDate)).toMatch(/Z"$/);
+        expect(JSON.stringify(details.endDate)).toMatch(/Z"$/);
+      }
+    });
+  });
+
+  // The predicate's second argument always describes the RULE timezone, so a
+  // condition written against it must select the same instants on every host.
+  // Expectations are exact epochs and the weekday is derived from
+  // Intl.DateTimeFormat with an explicit timeZone, never read back from the
+  // library.
+  describe('condition contract is host-independent', () => {
+    const CHATHAM = 'Pacific/Chatham';
+    const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const zoneWeekday = (date: Date, timeZone: string) =>
+      WEEKDAY_NAMES.indexOf(
+        new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(
+          date,
+        ),
+      );
+
+    // Chatham runs at +13:45 through March 2026, so its midnight is the
+    // previous UTC day at 10:15Z. 2026-03-20 is a Friday there.
+    const chathamMidnight = (utcDay: string) =>
+      new Date(`${utcDay}T10:15:00.000Z`);
+
+    it('selects the rule zone business days regardless of host', () => {
+      const seenWeekdays: number[] = [];
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: chathamMidnight('2026-03-19'),
+        timezone: CHATHAM,
+        condition: (date, parts) => {
+          expect(parts.weekday).toBe(zoneWeekday(date, CHATHAM));
+          seenWeekdays.push(parts.weekday);
+          return parts.weekday !== 0 && parts.weekday !== 6;
+        },
+      });
+
+      const occurrences = rule.getAllOccurrences({
+        start: chathamMidnight('2026-03-19'),
+        end: chathamMidnight('2026-03-27'),
+      });
+
+      expect(occurrences.map((occurrence) => occurrence.getTime())).toEqual([
+        Date.parse('2026-03-19T10:15:00.000Z'), // Fri 2026-03-20 +13:45
+        Date.parse('2026-03-22T10:15:00.000Z'), // Mon 2026-03-23
+        Date.parse('2026-03-23T10:15:00.000Z'), // Tue 2026-03-24
+        Date.parse('2026-03-24T10:15:00.000Z'), // Wed 2026-03-25
+        Date.parse('2026-03-25T10:15:00.000Z'), // Thu 2026-03-26
+        Date.parse('2026-03-26T10:15:00.000Z'), // Fri 2026-03-27
+      ]);
+      expect(seenWeekdays).toContain(0);
+      expect(seenWeekdays).toContain(6);
+    });
+
+    it('skips rule-zone weekends in getNextOccurrence regardless of host', () => {
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: chathamMidnight('2026-03-19'),
+        timezone: CHATHAM,
+        condition: (_date, parts) => parts.weekday !== 0 && parts.weekday !== 6,
+      });
+
+      // After Chatham Friday 2026-03-20 the next weekday is Monday 2026-03-23.
+      expect(
+        rule.getNextOccurrence(chathamMidnight('2026-03-19')).getTime(),
+      ).toBe(Date.parse('2026-03-22T10:15:00.000Z'));
+    });
+
+    it('still honours a one-argument condition', () => {
+      let calls = 0;
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: new Date('2026-01-01T00:00:00.000Z'),
+        timezone: 'UTC',
+        condition: (date) => {
+          calls++;
+          return date.getTime() !== Date.parse('2026-01-02T00:00:00.000Z');
+        },
+      });
+
+      const occurrences = rule.getAllOccurrences({
+        start: new Date('2026-01-01T00:00:00.000Z'),
+        end: new Date('2026-01-03T00:00:00.000Z'),
+      });
+
+      expect(calls).toBeGreaterThan(0);
+      expect(occurrences.map((occurrence) => occurrence.getTime())).toEqual([
+        Date.parse('2026-01-01T00:00:00.000Z'),
+        Date.parse('2026-01-03T00:00:00.000Z'),
+      ]);
+    });
+
+    it('exports ZonedParts as a usable type from the package entry point', () => {
+      const captured: ZonedParts[] = [];
+      const collect = (_date: Date, parts: ZonedParts) => {
+        captured.push(parts);
+        return true;
+      };
+      const rule = new Quickurrence({
+        rule: 'daily',
+        startDate: new Date('2026-01-01T00:00:00.000Z'),
+        timezone: 'UTC',
+        condition: collect,
+      });
+
+      rule.getAllOccurrences({
+        start: new Date('2026-01-01T00:00:00.000Z'),
+        end: new Date('2026-01-01T00:00:00.000Z'),
+      });
+
+      expect(captured[0]).toEqual({
+        year: 2026,
+        month: 0,
+        day: 1,
+        weekday: 4,
+        hour: 0,
+        minute: 0,
+        second: 0,
+        ms: 0,
+      });
+    });
+  });
+});
+
+describe('exported zod schemas', () => {
+  // Not exported, but reachable through the options schema, which is the only
+  // way a consumer can hit it.
+  const NthWeekdayConfigSchema =
+    QuickurrenceOptionsSchema.shape.nthWeekdayOfMonth.unwrap();
+
+  const allWeekdays = [0, 1, 2, 3, 4, 5, 6] as const;
+  const allMonthDays = Array.from({ length: 31 }, (_, index) => index + 1);
+
+  const schemaCases: readonly {
+    name: string;
+    schema: { safeParse: (value: unknown) => { success: boolean } };
+    valid: readonly unknown[];
+    invalid: readonly unknown[];
+  }[] = [
+    {
+      name: 'RecurrenceRuleSchema',
+      schema: RecurrenceRuleSchema,
+      valid: ['daily', 'weekly', 'monthly', 'yearly'],
+      invalid: ['hourly', 'Daily', '', 1, null, undefined],
+    },
+    {
+      name: 'DateRangeSchema',
+      schema: DateRangeSchema,
+      valid: [
+        { start: new Date('2026-01-01T00:00:00.000Z'), end: new Date('2026-02-01T00:00:00.000Z') },
+      ],
+      invalid: [
+        { start: '2026-01-01', end: '2026-02-01' },
+        { start: new Date('2026-01-01T00:00:00.000Z') },
+        { start: new Date('nonsense'), end: new Date('2026-02-01T00:00:00.000Z') },
+        'not-a-range',
+        null,
+      ],
+    },
+    {
+      name: 'WeekStartsOnSchema',
+      schema: WeekStartsOnSchema,
+      valid: allWeekdays,
+      invalid: [-1, 7, 99, 1.5, '1', 'nope', null, true, {}],
+    },
+    {
+      name: 'WeekDaySchema',
+      schema: WeekDaySchema,
+      valid: allWeekdays,
+      invalid: [-1, 7, 99, 1.5, '1', 'nope', null, true, []],
+    },
+    {
+      name: 'MonthDaySchema',
+      schema: MonthDaySchema,
+      valid: allMonthDays,
+      invalid: [0, -1, 32, 99, 15.5, '15', 'last', null, {}],
+    },
+    {
+      name: 'NthWeekdayOfMonthSchema',
+      schema: NthWeekdayOfMonthSchema,
+      valid: [1, 2, 3, 4, 'last'],
+      invalid: [0, -1, 5, 99, 2.5, '1', 'first', 'Last', null, {}],
+    },
+    {
+      name: 'NthWeekdayConfigSchema',
+      schema: NthWeekdayConfigSchema,
+      valid: [
+        { weekday: 0, nth: 1 },
+        { weekday: 6, nth: 'last' },
+        { weekday: 3, nth: 4 },
+      ],
+      invalid: [
+        { weekday: 7, nth: 1 },
+        { weekday: -1, nth: 1 },
+        { weekday: 1, nth: 5 },
+        { weekday: 1, nth: 'first' },
+        { weekday: 1 },
+        { nth: 1 },
+        {},
+        'monday',
+        null,
+      ],
+    },
+    {
+      name: 'CountSchema',
+      schema: CountSchema,
+      valid: [1, 2, 1000],
+      invalid: [0, -1, 1.5, '5', null, Number.NaN],
+    },
+    {
+      name: 'IntervalSchema',
+      schema: IntervalSchema,
+      valid: [1, 3, 52],
+      invalid: [0, -2, 2.5, '2', null, Number.NaN],
+    },
+    {
+      name: 'TimeOfDaySchema',
+      schema: TimeOfDaySchema,
+      valid: ['00:00', '09:30', '23:59'],
+      invalid: ['24:00', '09:60', '9:30', '0930', '', '09:30:00', 930, null],
+    },
+    {
+      name: 'TimesOfDaySchema',
+      schema: TimesOfDaySchema,
+      valid: [['09:00'], ['00:00', '12:30', '23:59']],
+      invalid: [[], ['9:00'], ['09:00', '24:00'], '09:00', null],
+    },
+    {
+      name: 'QuickurrenceOptionsSchema',
+      schema: QuickurrenceOptionsSchema,
+      valid: [
+        {},
+        {
+          startDate: new Date('2026-01-01T00:00:00.000Z'),
+          endDate: new Date('2026-12-31T00:00:00.000Z'),
+          rule: 'weekly',
+          timezone: 'Europe/Warsaw',
+          interval: 2,
+          count: 10,
+          weekStartsOn: 1,
+          weekDays: [1, 3, 5],
+          excludeDates: [new Date('2026-03-01T00:00:00.000Z')],
+          condition: true,
+          timesOfDay: ['09:00', '17:30'],
+        },
+        { rule: 'monthly', monthDay: 31, monthDayMode: 'last' },
+        { rule: 'monthly', nthWeekdayOfMonth: { weekday: 1, nth: 'last' } },
+        { condition: () => true },
+      ],
+      invalid: [
+        { rule: 'hourly' },
+        { startDate: '2026-01-01' },
+        { interval: 0 },
+        { count: 0 },
+        { monthDayMode: 'first' },
+        { preset: 'holidays' },
+        { timesOfDay: [] },
+        { condition: 'always' },
+      ],
+    },
+  ];
+
+  schemaCases.forEach(({ name, schema, valid, invalid }) => {
+    describe(name, () => {
+      it.each(valid.map((value) => [value]))('accepts %o', (value) => {
+        expect(schema.safeParse(value).success).toBe(true);
+      });
+
+      it.each(invalid.map((value) => [value]))('rejects %o', (value) => {
+        expect(schema.safeParse(value).success).toBe(false);
+      });
+    });
+  });
+
+  describe('QuickurrenceOptionsSchema nested validation', () => {
+    it('rejects an out-of-range weekDays entry', () => {
+      expect(
+        QuickurrenceOptionsSchema.safeParse({ rule: 'weekly', weekDays: [99] })
+          .success,
+      ).toBe(false);
+    });
+
+    it('rejects a wrongly typed weekDays entry', () => {
+      expect(
+        QuickurrenceOptionsSchema.safeParse({
+          rule: 'weekly',
+          weekDays: ['monday'],
+        }).success,
+      ).toBe(false);
+    });
+
+    it('rejects an out-of-range monthDay', () => {
+      expect(
+        QuickurrenceOptionsSchema.safeParse({ rule: 'monthly', monthDay: 32 })
+          .success,
+      ).toBe(false);
+    });
+
+    it('rejects a bad nthWeekdayOfMonth weekday', () => {
+      expect(
+        QuickurrenceOptionsSchema.safeParse({
+          rule: 'monthly',
+          nthWeekdayOfMonth: { weekday: 9, nth: 1 },
+        }).success,
+      ).toBe(false);
+    });
+
+    it('rejects a bad nthWeekdayOfMonth nth', () => {
+      expect(
+        QuickurrenceOptionsSchema.safeParse({
+          rule: 'monthly',
+          nthWeekdayOfMonth: { weekday: 1, nth: 5 },
+        }).success,
+      ).toBe(false);
+    });
+
+    it('reports the offending nested path', () => {
+      const result = QuickurrenceOptionsSchema.safeParse({
+        rule: 'weekly',
+        weekDays: [1, 99],
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.path).toEqual(['weekDays', 1]);
+    });
+  });
+
+  describe('Quickurrence.update schema rejection', () => {
+    const baseOptions: QuickurrenceOptions = {
+      rule: 'weekly',
+      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      timezone: 'UTC',
+      weekDays: [1],
+    };
+
+    it('throws a coded QuickurrenceError for an illegal weekDays value', () => {
+      let thrown: unknown;
+      try {
+        Quickurrence.update(baseOptions, {
+          weekDays: [99 as unknown as WeekDay],
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(QuickurrenceError);
+      expect((thrown as QuickurrenceError).code).toBe(
+        QuickurrenceErrorCode.INVALID_WEEKDAYS,
+      );
+      expect((thrown as QuickurrenceError).context?.option).toBe('weekDays');
+      expect(
+        (thrown as QuickurrenceError).context?.details?.issues,
+      ).toBeDefined();
+    });
+
+    it('throws INVALID_MONTH_DAY for an illegal monthDay', () => {
+      expect(() =>
+        Quickurrence.update(
+          { ...baseOptions, rule: 'monthly', weekDays: undefined },
+          { monthDay: 32 as unknown as MonthDay },
+        ),
+      ).toThrowError(
+        expect.objectContaining({
+          name: 'QuickurrenceError',
+          code: QuickurrenceErrorCode.INVALID_MONTH_DAY,
+        }),
+      );
+    });
+
+    it('throws INVALID_NTH_WEEKDAY for an illegal nthWeekdayOfMonth', () => {
+      expect(() =>
+        Quickurrence.update(
+          { ...baseOptions, rule: 'monthly', weekDays: undefined },
+          {
+            nthWeekdayOfMonth: { weekday: 1, nth: 9 } as unknown as {
+              weekday: WeekDay;
+              nth: 1;
+            },
+          },
+        ),
+      ).toThrowError(
+        expect.objectContaining({
+          code: QuickurrenceErrorCode.INVALID_NTH_WEEKDAY,
+        }),
+      );
+    });
+
+    it('does not write to the console when rejecting', () => {
+      const consoleError = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+
+      expect(() =>
+        Quickurrence.update(baseOptions, {
+          weekDays: [99 as unknown as WeekDay],
+        }),
+      ).toThrow(QuickurrenceError);
+      expect(consoleError).not.toHaveBeenCalled();
+
+      consoleError.mockRestore();
+    });
+  });
+});
+
+// Regression coverage for the defects reconciled in the 0.4.0 validation work.
+// Each block below pins behaviour that was measurably wrong before it.
+describe('0.4.0 regressions', () => {
+  const START = new Date('2026-01-01T00:00:00.000Z');
+  const base: QuickurrenceOptions = {
+    rule: 'daily',
+    startDate: START,
+    timezone: 'UTC',
+  };
+  // START is a UTC midnight and every rule below is a UTC rule, so whole-day ms
+  // arithmetic lands on a UTC midnight exactly.
+  const windowOf = (days: number) => ({
+    start: START,
+    end: new Date(START.getTime() + days * 86_400_000),
+  });
+  const wideRange = windowOf(1050);
+
+  describe('an unknown preset is rejected identically from every entry point', () => {
+    const badPreset = 'mystery' as unknown as 'businessDays';
+
+    const entryPoints: readonly [string, () => unknown][] = [
+      ['new Quickurrence', () => new Quickurrence({ ...base, preset: badPreset })],
+      ['Quickurrence.update', () => Quickurrence.update(base, { preset: badPreset })],
+      [
+        'Quickurrence.toHumanText',
+        () => Quickurrence.toHumanText({ ...base, preset: badPreset }),
+      ],
+    ];
+
+    entryPoints.forEach(([name, call]) => {
+      it(`throws UNSUPPORTED_PRESET from ${name}`, () => {
+        const error = expectCode(call, QuickurrenceErrorCode.UNSUPPORTED_PRESET);
+        expect(error.message).toBe('Unsupported preset: mystery');
+        expect(error.context?.option).toBe('preset');
+        expect(error.context?.value).toBe('mystery');
+      });
+    });
+
+    it('agrees with the validator on the same preset', () => {
+      const error = expectCode(
+        () =>
+          QuickurrenceValidator.validateOptions({
+            ...base,
+            preset: badPreset,
+          }),
+        QuickurrenceErrorCode.UNSUPPORTED_PRESET,
+      );
+      expect(error.message).toBe('Unsupported preset: mystery');
+    });
+  });
+
+  describe('update() round-trips the options it is given', () => {
+    it('preserves weekStartsOn, which used to be dropped', () => {
+      const updated = Quickurrence.update(base, {
+        weekStartsOn: 3 as unknown as 0,
+      });
+
+      expect(updated?.weekStartsOn).toBe(3);
+    });
+
+    it('preserves every legal weekStartsOn value', () => {
+      const legalValues = [0, 1, 2, 3, 4, 5, 6] as const;
+
+      legalValues.forEach((weekStartsOn) => {
+        expect(
+          Quickurrence.update(base, { weekStartsOn })?.weekStartsOn,
+        ).toBe(weekStartsOn);
+      });
+    });
+
+    it('preserves monthDayMode without an accompanying monthDay', () => {
+      const updated = Quickurrence.update(
+        { ...base, rule: 'monthly' },
+        { monthDayMode: 'skip' },
+      );
+
+      expect(updated?.monthDayMode).toBe('skip');
+      expect(updated?.monthDay).toBeUndefined();
+    });
+
+    it('preserves monthDayMode alongside a monthDay', () => {
+      const updated = Quickurrence.update(
+        { ...base, rule: 'monthly' },
+        { monthDay: 15, monthDayMode: 'skip' },
+      );
+
+      expect(updated?.monthDay).toBe(15);
+      expect(updated?.monthDayMode).toBe('skip');
+    });
+
+    // Not a loss: clean() strips the default so the produced options stay
+    // minimal, and interval 1 is what an absent interval already means.
+    it('still drops interval 1 as clean()\'s default removal', () => {
+      const updated = Quickurrence.update({ ...base, interval: 2 }, { interval: 1 });
+
+      expect(updated).not.toBeNull();
+      expect(updated?.interval).toBeUndefined();
+    });
+
+    it('keeps a non-default interval', () => {
+      expect(Quickurrence.update(base, { interval: 4 })?.interval).toBe(4);
+    });
+
+    it('rejects an illegal weekStartsOn, which used to be unreachable here', () => {
+      const error = expectCode(
+        () => Quickurrence.update(base, { weekStartsOn: 9 as unknown as 0 }),
+        QuickurrenceErrorCode.INVALID_WEEK_STARTS_ON,
+      );
+      expect(error.context?.option).toBe('weekStartsOn');
+    });
+  });
+
+  describe('the occurrence cap is exactly 1000', () => {
+    // `days` is the smallest window that overruns the cap for that shape, with
+    // a little slack: a day-level rule needs 1000 days, an N-slot timesOfDay
+    // rule 1000/N, and weekly-on-5-weekdays 1000/5*7 = 1400. Sized per shape
+    // because a single wide window would make each run collect its own 1000-day
+    // internal maximum whether the shape needs it or not.
+    const cappedShapes: readonly [string, number, QuickurrenceOptions][] = [
+      ['a day-level rule', 1050, base],
+      [
+        'a rule with one timesOfDay slot',
+        1050,
+        { ...base, timesOfDay: ['09:00'] },
+      ],
+      [
+        'a rule with two timesOfDay slots',
+        550,
+        { ...base, timesOfDay: ['09:00', '18:00'] },
+      ],
+      [
+        'a rule with three timesOfDay slots',
+        400,
+        { ...base, timesOfDay: ['09:00', '12:30', '18:00'] },
+      ],
+      [
+        'a weekly rule with weekDays',
+        1450,
+        { rule: 'weekly', startDate: START, timezone: 'UTC', weekDays: [1, 2, 3, 4, 5] },
+      ],
+    ];
+
+    // Generating a full 1000 occurrences is by design the heaviest work in the
+    // suite, and the TZ sweep runs several zones concurrently on one machine,
+    // so the default 5s per-test budget is raised rather than the assertion
+    // weakened.
+    const CAP_TEST_TIMEOUT_MS = 30_000;
+
+    cappedShapes.forEach(([label, days, options]) => {
+      it(
+        `returns exactly 1000 occurrences for ${label}`,
+        () => {
+          expect(
+            new Quickurrence(options).getAllOccurrences(windowOf(days)),
+          ).toHaveLength(1000);
+        },
+        CAP_TEST_TIMEOUT_MS,
+      );
+    });
+
+    it('honours a small count exactly', () => {
+      expect(
+        new Quickurrence({ ...base, count: 5 }).getAllOccurrences(wideRange),
+      ).toHaveLength(5);
+    });
+
+    it('honours a small count exactly with timesOfDay', () => {
+      expect(
+        new Quickurrence({
+          ...base,
+          count: 5,
+          timesOfDay: ['09:00', '18:00'],
+        }).getAllOccurrences(wideRange),
+      ).toHaveLength(5);
+    });
+
+    it(
+      'does not let a count above the cap raise it',
+      () => {
+        expect(
+          new Quickurrence({ ...base, count: 5000 }).getAllOccurrences(wideRange),
+        ).toHaveLength(1000);
+      },
+      CAP_TEST_TIMEOUT_MS,
+    );
+  });
+
+  describe('non-Date input is a coded error, not a bare TypeError', () => {
+    const rule = () => new Quickurrence(base);
+    const asDate = (value: string) => value as unknown as Date;
+
+    it('rejects a string range from getAllOccurrences', () => {
+      const error = expectCode(
+        () =>
+          rule().getAllOccurrences({
+            start: asDate('2026-01-01'),
+            end: asDate('2026-02-01'),
+          }),
+        QuickurrenceErrorCode.INVALID_DATE_RANGE,
+      );
+      expect(error.context?.option).toBe('range.start');
+      expect(error.context?.operation).toBe('getAllOccurrences');
+    });
+
+    it('rejects a non-Date range.start', () => {
+      const error = expectCode(
+        () =>
+          rule().getAllOccurrences({
+            start: asDate('2026-01-01'),
+            end: new Date('2026-02-01T00:00:00.000Z'),
+          }),
+        QuickurrenceErrorCode.INVALID_DATE_RANGE,
+      );
+      expect(error.context?.option).toBe('range.start');
+    });
+
+    it('rejects a non-Date range.end', () => {
+      const error = expectCode(
+        () =>
+          rule().getAllOccurrences({
+            start: new Date('2026-01-01T00:00:00.000Z'),
+            end: asDate('2026-02-01'),
+          }),
+        QuickurrenceErrorCode.INVALID_DATE_RANGE,
+      );
+      expect(error.context?.option).toBe('range.end');
+    });
+
+    it('rejects a non-object range', () => {
+      const error = expectCode(
+        () => rule().getAllOccurrences(null as unknown as { start: Date; end: Date }),
+        QuickurrenceErrorCode.INVALID_DATE_RANGE,
+      );
+      expect(error.context?.option).toBe('range');
+    });
+
+    it('rejects a string argument to getNextOccurrence', () => {
+      const error = expectCode(
+        () => rule().getNextOccurrence(asDate('2026-01-01')),
+        QuickurrenceErrorCode.INVALID_DATE_RANGE,
+      );
+      expect(error.context?.option).toBe('after');
+    });
+
+    it('rejects a string startDate in the constructor', () => {
+      const error = expectCode(
+        () => new Quickurrence({ ...base, startDate: asDate('2026-01-01') }),
+        QuickurrenceErrorCode.INVALID_START_DATE,
+      );
+      expect(error.context?.operation).toBe('constructor');
+    });
+
+    // The whole point of the distinction: a real Date whose time is NaN is a
+    // valid argument with no occurrences, not a type error.
+    it('still degrades to [] for a genuine Invalid Date', () => {
+      expect(
+        rule().getAllOccurrences({ start: START, end: new Date('not-a-date') }),
+      ).toEqual([]);
+    });
+
+    it('still returns an Invalid Date from getNextOccurrence(Invalid Date)', () => {
+      const next = rule().getNextOccurrence(new Date('not-a-date'));
+
+      expect(next.constructor).toBe(Date);
+      expect(Number.isNaN(next.getTime())).toBe(true);
+    });
+  });
+
+  describe('a consumer condition is never invoked during validation', () => {
+    const buildCounter = () => {
+      let calls = 0;
+      const condition = () => {
+        calls++;
+        return true;
+      };
+      return { condition, callCount: () => calls };
+    };
+
+    const validationOnlyPaths: readonly [string, (condition: () => boolean) => unknown][] = [
+      ['new Quickurrence', (condition) => new Quickurrence({ ...base, condition })],
+      ['Quickurrence.update', (condition) => Quickurrence.update(base, { condition })],
+      [
+        'QuickurrenceOptionsSchema.safeParse',
+        (condition) => QuickurrenceOptionsSchema.safeParse({ ...base, condition }),
+      ],
+      ['Quickurrence.clean', (condition) => Quickurrence.clean({ ...base, condition })],
+      [
+        'QuickurrenceValidator.validateOptions',
+        (condition) =>
+          QuickurrenceValidator.validateOptions({ ...base, condition }),
+      ],
+    ];
+
+    validationOnlyPaths.forEach(([name, run]) => {
+      it(`does not call the predicate from ${name}`, () => {
+        const { condition, callCount } = buildCounter();
+
+        run(condition);
+
+        expect(callCount()).toBe(0);
+      });
+    });
+
+    it('calls the predicate only once generation runs', () => {
+      const { condition, callCount } = buildCounter();
+      const rule = new Quickurrence({ ...base, condition });
+
+      expect(callCount()).toBe(0);
+
+      const occurrences = rule.getAllOccurrences({
+        start: START,
+        end: new Date('2026-01-05T00:00:00.000Z'),
+      });
+
+      expect(occurrences).toHaveLength(5);
+      expect(callCount()).toBe(5);
+    });
+
+    // The regression the removal fixed: smoke-testing the predicate on a
+    // fabricated date sank rules whose predicate is only defined over the data
+    // it actually knows about.
+    it('accepts a predicate with a bounded domain at construction', () => {
+      const knownYearsOnly = (_date: Date, parts: ZonedParts) => {
+        if (parts.year !== 2026) {
+          throw new Error(`no data for ${parts.year}`);
+        }
+        return parts.day % 2 === 1;
+      };
+
+      const rule = new Quickurrence({ ...base, condition: knownYearsOnly });
+
+      expect(
+        rule
+          .getAllOccurrences({
+            start: START,
+            end: new Date('2026-01-05T00:00:00.000Z'),
+          })
+          .map((occurrence) => occurrence.getTime()),
+      ).toEqual([
+        Date.parse('2026-01-01T00:00:00.000Z'),
+        Date.parse('2026-01-03T00:00:00.000Z'),
+        Date.parse('2026-01-05T00:00:00.000Z'),
+      ]);
+    });
+  });
+
+  describe('the schema and the validator agree', () => {
+    type LayerVerdicts = {
+      schema: boolean;
+      validator: boolean;
+      constructor: boolean;
+      update: boolean;
+    };
+
+    const accepts = (call: () => unknown) => caughtError(call) === undefined;
+
+    const verdicts = (options: QuickurrenceOptions): LayerVerdicts => ({
+      schema: QuickurrenceOptionsSchema.safeParse(options).success,
+      validator: accepts(() => QuickurrenceValidator.validateOptions(options)),
+      constructor: accepts(() => new Quickurrence(options)),
+      update: accepts(() =>
+        Quickurrence.update(
+          { rule: options.rule, startDate: START, timezone: 'UTC' },
+          options,
+        ),
+      ),
+    });
+
+    const allReject: LayerVerdicts = {
+      schema: false,
+      validator: false,
+      constructor: false,
+      update: false,
+    };
+
+    // Inputs where the two layers used to disagree. Every layer must now return
+    // the same verdict for each.
+    const agreedRejections: readonly [string, QuickurrenceOptions][] = [
+      ['a fractional weekDays entry', { rule: 'weekly', startDate: START, weekDays: [3.5] as unknown as WeekDay[] }],
+      ['an out-of-range weekDays entry', { rule: 'weekly', startDate: START, weekDays: [7] as unknown as WeekDay[] }],
+      ['a string weekDays entry', { rule: 'weekly', startDate: START, weekDays: ['1'] as unknown as WeekDay[] }],
+      ['duplicate weekDays entries', { rule: 'weekly', startDate: START, weekDays: [1, 1] }],
+      [
+        'a string nthWeekdayOfMonth.weekday',
+        {
+          rule: 'monthly',
+          startDate: START,
+          nthWeekdayOfMonth: { weekday: 'Mon' as unknown as WeekDay, nth: 1 },
+        },
+      ],
+      ['monthDay 0', { rule: 'monthly', startDate: START, monthDay: 0 as unknown as MonthDay }],
+      ['monthDay 32', { rule: 'monthly', startDate: START, monthDay: 32 as unknown as MonthDay }],
+    ];
+
+    agreedRejections.forEach(([label, options]) => {
+      it(`rejects ${label} from all four layers`, () => {
+        expect(verdicts(options)).toEqual(allReject);
+      });
+    });
+
+    it('accepts the legal counterparts from all four layers', () => {
+      const legal: readonly QuickurrenceOptions[] = [
+        { rule: 'weekly', startDate: START, weekDays: [0, 6] },
+        { rule: 'monthly', startDate: START, monthDay: 1 },
+        { rule: 'monthly', startDate: START, monthDay: 31 },
+        {
+          rule: 'monthly',
+          startDate: START,
+          nthWeekdayOfMonth: { weekday: 1, nth: 'last' },
+        },
+      ];
+
+      legal.forEach((options) => {
+        expect(verdicts(options)).toEqual({
+          schema: true,
+          validator: true,
+          constructor: true,
+          update: true,
+        });
+      });
+    });
+
+    describe('deliberate disagreements', () => {
+      // Neither the schema nor the validator performs an Intl timezone lookup:
+      // doing so would make a pure shape check depend on the host's ICU data.
+      // Only the constructor (and update(), which must normalize a start date
+      // in the zone) resolves the identifier, so only they can reject it.
+      it('pins that only the resolving layers reject an unknown timezone', () => {
+        const options: QuickurrenceOptions = {
+          rule: 'daily',
+          startDate: START,
+          timezone: 'Not/AZone',
+        };
+
+        expect(verdicts(options)).toEqual({
+          schema: true,
+          validator: true,
+          constructor: false,
+          update: false,
+        });
+        expectCode(
+          () => new Quickurrence(options),
+          QuickurrenceErrorCode.INVALID_TIMEZONE,
+        );
+      });
+
+      // An empty timezone is mapped to UTC before validation runs, so the two
+      // entry points accept it. The validator sees the raw '' and rejects it —
+      // it is never handed a '' by either entry point.
+      it('pins that an empty timezone is mapped to UTC before validation', () => {
+        const options: QuickurrenceOptions = {
+          rule: 'daily',
+          startDate: START,
+          timezone: '',
+        };
+
+        expect(verdicts(options)).toEqual({
+          schema: true,
+          validator: false,
+          constructor: true,
+          update: true,
+        });
+        expect(new Quickurrence(options).getOptions().timezone).toBe('UTC');
+        expect(Quickurrence.update(options, {})?.timezone).toBe('UTC');
+      });
+
+      // The schema validates fields independently, so it cannot see a
+      // cross-field conflict. update() never reaches one either, because
+      // clean() resolves the conflict (it drops endDate in favour of count)
+      // before the schema runs.
+      it('pins that only the validator and constructor catch count + endDate', () => {
+        const options: QuickurrenceOptions = {
+          rule: 'daily',
+          startDate: START,
+          count: 3,
+          endDate: new Date('2027-01-01T00:00:00.000Z'),
+        };
+
+        expect(verdicts(options)).toEqual({
+          schema: true,
+          validator: false,
+          constructor: false,
+          update: true,
+        });
+        expect(Quickurrence.update(options, {})?.endDate).toBeUndefined();
+        expectCode(
+          () => new Quickurrence(options),
+          QuickurrenceErrorCode.CONFLICTING_OPTIONS,
+        );
+      });
+
+      // clean() deletes an empty weekDays array before update()'s schema can
+      // see it, so update() accepts an input the other three reject.
+      it('pins that clean() drops an empty weekDays before update()\'s schema', () => {
+        const options: QuickurrenceOptions = {
+          rule: 'weekly',
+          startDate: START,
+          weekDays: [],
+        };
+
+        expect(verdicts(options)).toEqual({
+          schema: false,
+          validator: false,
+          constructor: false,
+          update: true,
+        });
+        expect(Quickurrence.clean(options).weekDays).toBeUndefined();
+        expect(Quickurrence.update(options, {})?.weekDays).toBeUndefined();
+      });
+    });
+  });
+
+  // The entry point's runtime exports are the package's public surface: adding
+  // a name here is a semver-relevant public-API decision, not a refactor. An
+  // internal helper and five internal constants leaked out during the 0.4.0
+  // migration and only a manual diff caught it, so the set is pinned exactly.
+  describe('public export surface', () => {
+    const PUBLIC_RUNTIME_EXPORTS = [
+      'CountSchema',
+      'DateRangeSchema',
+      'IntervalSchema',
+      'MonthDaySchema',
+      'NthWeekdayOfMonthSchema',
+      'Quickurrence',
+      'QuickurrenceError',
+      'QuickurrenceErrorCode',
+      'QuickurrenceErrorType',
+      'QuickurrenceMerge',
+      'QuickurrenceOptionsSchema',
+      'QuickurrenceValidator',
+      'RecurrenceRuleSchema',
+      'TimeOfDaySchema',
+      'TimesOfDaySchema',
+      'WeekDaySchema',
+      'WeekStartsOnSchema',
+      'recurrenceRulesOptions',
+    ] as const;
+
+    it('exports exactly the pinned set of runtime names', () => {
+      expect(Object.keys(publicApi).sort()).toEqual([...PUBLIC_RUNTIME_EXPORTS]);
+    });
+
+    it('leaks no internal option constants or helpers', () => {
+      const internals = [
+        'dayOptions',
+        'monthDayOptions',
+        'monthDayModeOptions',
+        'nthWeekdayOfMonthOptions',
+        'presetOptions',
+        'isOneOf',
+        'MAX_NEXT_OCCURENCES',
+      ];
+
+      internals.forEach((name) => {
+        expect(Object.keys(publicApi)).not.toContain(name);
+      });
     });
   });
 });

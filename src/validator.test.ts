@@ -1,7 +1,21 @@
 import { UTCDateMini } from '@date-fns/utc';
 import { describe, expect, it } from 'vitest';
 import { QuickurrenceValidator } from './validator';
+import { QuickurrenceError, QuickurrenceErrorCode } from './index';
 import type { QuickurrenceOptions } from './index';
+
+// Malformed input is the point of most cases below, so the single cast lives
+// here rather than being repeated at every call site.
+const errorCode = (options: unknown) => {
+  try {
+    QuickurrenceValidator.validateOptions(options as QuickurrenceOptions);
+  } catch (error) {
+    return (error as QuickurrenceError).code;
+  }
+  return undefined;
+};
+
+const START = new UTCDateMini('2024-01-01');
 
 describe('QuickurrenceValidator', () => {
   describe('validateRule', () => {
@@ -564,16 +578,15 @@ describe('QuickurrenceValidator', () => {
       }).toThrow('weekDays option is only valid for weekly recurrence');
     });
 
-    it('should not validate weekDays when rule is undefined', () => {
+    it('should skip only the weekly-rule compatibility check when rule is undefined', () => {
       const options: QuickurrenceOptions = {
         startDate: new UTCDateMini('2024-01-01'),
-        // No rule specified, weekDays should not be validated
         weekDays: [1, 2, 3],
       };
 
       expect(() => {
         QuickurrenceValidator.validateOptions(options);
-      }).not.toThrow(); // Should not throw since rule validation is skipped
+      }).not.toThrow();
     });
 
     it('should still validate monthDay range', () => {
@@ -614,6 +627,301 @@ describe('QuickurrenceValidator', () => {
       }).toThrow(
         'Cannot use both count and endDate options. Choose one approach to limit occurrences.',
       );
+    });
+  });
+
+  // `rule` is optional, but the *values* of the other options are not. The
+  // rule-only checks (is this option compatible with this rule?) stay gated on
+  // a rule being present; every value and shape check runs regardless, so a
+  // rule-less config is rejected by the validator exactly as the zod schema
+  // rejects it.
+  describe('value checks with no rule supplied', () => {
+    it('rejects an out-of-range weekDays entry', () => {
+      expect(errorCode({ startDate: START, weekDays: [7] })).toBe(
+        QuickurrenceErrorCode.INVALID_WEEKDAYS,
+      );
+    });
+
+    it('rejects an empty weekDays array', () => {
+      expect(errorCode({ startDate: START, weekDays: [] })).toBe(
+        QuickurrenceErrorCode.EMPTY_REQUIRED_ARRAY,
+      );
+    });
+
+    it('rejects duplicate weekDays', () => {
+      expect(errorCode({ startDate: START, weekDays: [1, 1] })).toBe(
+        QuickurrenceErrorCode.INVALID_WEEKDAYS,
+      );
+    });
+
+    it('rejects an out-of-range monthDay', () => {
+      expect(errorCode({ startDate: START, monthDay: 32 })).toBe(
+        QuickurrenceErrorCode.INVALID_MONTH_DAY,
+      );
+    });
+
+    it('rejects an unknown monthDayMode', () => {
+      expect(errorCode({ startDate: START, monthDayMode: 'first' })).toBe(
+        QuickurrenceErrorCode.INVALID_MONTH_DAY_MODE,
+      );
+    });
+
+    it('rejects an out-of-range nthWeekdayOfMonth.weekday', () => {
+      expect(
+        errorCode({
+          startDate: START,
+          nthWeekdayOfMonth: { weekday: 7, nth: 1 },
+        }),
+      ).toBe(QuickurrenceErrorCode.INVALID_NTH_WEEKDAY);
+    });
+
+    it('rejects an out-of-range nthWeekdayOfMonth.nth', () => {
+      expect(
+        errorCode({
+          startDate: START,
+          nthWeekdayOfMonth: { weekday: 1, nth: 5 },
+        }),
+      ).toBe(QuickurrenceErrorCode.INVALID_NTH_WEEKDAY);
+    });
+
+    it('rejects an out-of-range weekStartsOn', () => {
+      expect(errorCode({ startDate: START, weekStartsOn: 7 })).toBe(
+        QuickurrenceErrorCode.INVALID_WEEK_STARTS_ON,
+      );
+    });
+
+    it('rejects a malformed excludeDates entry', () => {
+      expect(
+        errorCode({ startDate: START, excludeDates: [new Date('nope')] }),
+      ).toBe(QuickurrenceErrorCode.INVALID_EXCLUDE_DATES);
+    });
+
+    it('accepts well-formed values', () => {
+      expect(
+        errorCode({
+          startDate: START,
+          weekDays: [1, 3, 5],
+          weekStartsOn: 6,
+          excludeDates: [new UTCDateMini('2024-01-03')],
+        }),
+      ).toBeUndefined();
+
+      expect(
+        errorCode({ startDate: START, monthDay: 31, monthDayMode: 'skip' }),
+      ).toBeUndefined();
+
+      expect(
+        errorCode({
+          startDate: START,
+          nthWeekdayOfMonth: { weekday: 1, nth: 'last' },
+        }),
+      ).toBeUndefined();
+    });
+
+    it('does not raise the monthly-only incompatibility for nthWeekdayOfMonth', () => {
+      expect(
+        errorCode({
+          startDate: START,
+          nthWeekdayOfMonth: { weekday: 1, nth: 2 },
+        }),
+      ).toBeUndefined();
+
+      expect(
+        errorCode({
+          startDate: START,
+          rule: 'weekly',
+          nthWeekdayOfMonth: { weekday: 1, nth: 2 },
+        }),
+      ).toBe(QuickurrenceErrorCode.INCOMPATIBLE_OPTIONS);
+    });
+
+    it('does not raise the monthly-only incompatibility for monthDay', () => {
+      expect(errorCode({ startDate: START, monthDay: 15 })).toBeUndefined();
+
+      expect(
+        errorCode({ startDate: START, rule: 'daily', monthDay: 15 }),
+      ).toBe(QuickurrenceErrorCode.INCOMPATIBLE_OPTIONS);
+    });
+  });
+
+  // The option checks test membership in the shared option arrays, not a
+  // numeric range. A range comparison such as `day < 0 || day > 6` accepts
+  // 3.5, '1' and other non-members; membership does not.
+  describe('option values are checked by membership, not by range', () => {
+    const nonWeekDays = [3.5, -1, 7, NaN, Infinity, '1', null, true];
+
+    it.each(nonWeekDays)('rejects weekDays entry %p', (day) => {
+      expect(errorCode({ startDate: START, rule: 'weekly', weekDays: [day] })).toBe(
+        QuickurrenceErrorCode.INVALID_WEEKDAYS,
+      );
+    });
+
+    it.each(nonWeekDays)('rejects weekStartsOn %p', (value) => {
+      expect(errorCode({ startDate: START, weekStartsOn: value })).toBe(
+        QuickurrenceErrorCode.INVALID_WEEK_STARTS_ON,
+      );
+    });
+
+    it.each([0, 32, 15.5, -1, NaN, '15', null])(
+      'rejects monthDay %p',
+      (monthDay) => {
+        expect(
+          errorCode({ startDate: START, rule: 'monthly', monthDay }),
+        ).toBe(QuickurrenceErrorCode.INVALID_MONTH_DAY);
+      },
+    );
+
+    it.each([0, 5, 1.5, 'first', null, true])(
+      'rejects nthWeekdayOfMonth.nth %p',
+      (nth) => {
+        expect(
+          errorCode({
+            startDate: START,
+            nthWeekdayOfMonth: { weekday: 1, nth },
+          }),
+        ).toBe(QuickurrenceErrorCode.INVALID_NTH_WEEKDAY);
+      },
+    );
+
+    // `Array.prototype.includes` compares with SameValueZero, under which -0
+    // and 0 are the same value, so a negative zero is a legitimate Sunday.
+    it('accepts -0 as day 0', () => {
+      expect(errorCode({ startDate: START, weekDays: [-0] })).toBeUndefined();
+      expect(errorCode({ startDate: START, weekStartsOn: -0 })).toBeUndefined();
+    });
+  });
+
+  describe('shape guards', () => {
+    it.each([3, '13', { 0: 1 }, new Set([1])])(
+      'rejects a non-array weekDays %p',
+      (weekDays) => {
+        expect(errorCode({ startDate: START, weekDays })).toBe(
+          QuickurrenceErrorCode.INVALID_WEEKDAYS,
+        );
+      },
+    );
+
+    it('reports the array shape rather than the member values for a non-array weekDays', () => {
+      expect(() => {
+        QuickurrenceValidator.validateOptions({
+          startDate: START,
+          weekDays: 3,
+        } as unknown as QuickurrenceOptions);
+      }).toThrow('weekDays must be an array of weekday values');
+    });
+
+    it.each(['last', 1, null, [1, 2]])(
+      'rejects a non-object nthWeekdayOfMonth %p',
+      (nthWeekdayOfMonth) => {
+        expect(errorCode({ startDate: START, nthWeekdayOfMonth })).toBe(
+          QuickurrenceErrorCode.INVALID_NTH_WEEKDAY,
+        );
+      },
+    );
+
+    it('reports the object shape for a null nthWeekdayOfMonth instead of throwing a TypeError', () => {
+      expect(() => {
+        QuickurrenceValidator.validateOptions({
+          startDate: START,
+          nthWeekdayOfMonth: null,
+        } as unknown as QuickurrenceOptions);
+      }).toThrow(
+        'nthWeekdayOfMonth must be an object with weekday and nth properties',
+      );
+    });
+
+    it.each(['2024-01-03', 1704240000000, { 0: new Date() }])(
+      'rejects a non-array excludeDates %p',
+      (excludeDates) => {
+        expect(errorCode({ startDate: START, excludeDates })).toBe(
+          QuickurrenceErrorCode.INVALID_EXCLUDE_DATES,
+        );
+      },
+    );
+
+    it('reports the array shape for a bare Date passed as excludeDates', () => {
+      expect(() => {
+        QuickurrenceValidator.validateOptions({
+          startDate: START,
+          excludeDates: new UTCDateMini('2024-01-03'),
+        } as unknown as QuickurrenceOptions);
+      }).toThrow('excludeDates must be an array of Date objects');
+    });
+  });
+
+  // Values that cannot be implicitly coerced used to blow up inside the error
+  // message's template literal, replacing the library error with a TypeError.
+  describe('non-coercible values still produce a QuickurrenceError', () => {
+    it('stringifies a symbol rule', () => {
+      expect(errorCode({ startDate: START, rule: Symbol('weekly') })).toBe(
+        QuickurrenceErrorCode.UNSUPPORTED_RULE,
+      );
+    });
+
+    it('stringifies a symbol preset', () => {
+      expect(errorCode({ startDate: START, preset: Symbol('weekends') })).toBe(
+        QuickurrenceErrorCode.UNSUPPORTED_PRESET,
+      );
+    });
+
+    it('stringifies a symbol monthDayMode', () => {
+      expect(() => {
+        QuickurrenceValidator.validateOptions({
+          startDate: START,
+          monthDayMode: Symbol('skip'),
+        } as unknown as QuickurrenceOptions);
+      }).toThrow('monthDayMode must be one of: skip, last. Got: Symbol(skip)');
+    });
+
+    it('stringifies a symbol nthWeekdayOfMonth.nth', () => {
+      expect(() => {
+        QuickurrenceValidator.validateOptions({
+          startDate: START,
+          nthWeekdayOfMonth: { weekday: 1, nth: Symbol('last') },
+        } as unknown as QuickurrenceOptions);
+      }).toThrow('Invalid nth in nthWeekdayOfMonth: Symbol(last)');
+    });
+  });
+
+  // Validation inspects the option, never runs it: a predicate with side
+  // effects or a cost must not fire just because a rule was constructed.
+  describe('condition predicate is never invoked during validation', () => {
+    let calls = 0;
+    const countingCondition = () => {
+      calls += 1;
+      return true;
+    };
+
+    it('does not call the predicate for a rule-bearing config', () => {
+      calls = 0;
+      QuickurrenceValidator.validateOptions({
+        startDate: START,
+        rule: 'daily',
+        condition: countingCondition,
+      });
+      expect(calls).toBe(0);
+    });
+
+    it('does not call the predicate for a rule-less config', () => {
+      calls = 0;
+      QuickurrenceValidator.validateOptions({
+        startDate: START,
+        condition: countingCondition,
+      });
+      expect(calls).toBe(0);
+    });
+
+    it('does not call the predicate on the path that rejects a conflicting preset', () => {
+      calls = 0;
+      expect(
+        errorCode({
+          startDate: START,
+          rule: 'daily',
+          condition: countingCondition,
+          preset: 'weekends',
+        }),
+      ).toBe(QuickurrenceErrorCode.CONFLICTING_OPTIONS);
+      expect(calls).toBe(0);
     });
   });
 });

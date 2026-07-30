@@ -1,5 +1,7 @@
+import { MAX_NEXT_OCCURENCES } from './options';
 import {
   Quickurrence,
+  type Condition,
   type QuickurrenceOptions,
   type RecurrenceRule,
   type DateRange,
@@ -12,8 +14,21 @@ import {
 } from './index';
 import { QuickurrenceError, QuickurrenceErrorCode } from './error';
 
+const EXHAUSTION_CODES = [
+  QuickurrenceErrorCode.NO_MORE_OCCURRENCES,
+  QuickurrenceErrorCode.COUNT_LIMIT_EXCEEDED,
+  QuickurrenceErrorCode.END_DATE_EXCEEDED,
+] as const;
+
 export class QuickurrenceMerge {
   public rules: Quickurrence[];
+
+  /** A rule reporting it has nothing left, as opposed to a real failure. */
+  private static isExhaustionError(error: unknown): boolean {
+    return EXHAUSTION_CODES.some((code) =>
+      QuickurrenceError.hasCode(error, code),
+    );
+  }
 
   constructor(rules: Quickurrence[]) {
     if (!rules || rules.length === 0) {
@@ -32,7 +47,12 @@ export class QuickurrenceMerge {
   }
 
   /**
-   * Get all occurrences within the given date range from all merged rules (union)
+   * Get all occurrences within the given date range from all merged rules (union).
+   *
+   * Each rule is individually capped at {@link MAX_NEXT_OCCURENCES}, so the
+   * union of N rules would otherwise return up to N times the documented cap.
+   * The same cap is applied to the merged result, keeping it a bound on
+   * returned occurrences: the earliest {@link MAX_NEXT_OCCURENCES} instants.
    */
   getAllOccurrences(range: DateRange): Date[] {
     const allOccurrences: Date[] = [];
@@ -50,7 +70,7 @@ export class QuickurrenceMerge {
       .map((time) => new Date(time))
       .sort((a, b) => a.getTime() - b.getTime());
 
-    return uniqueOccurrences;
+    return uniqueOccurrences.slice(0, MAX_NEXT_OCCURENCES);
   }
 
   /**
@@ -97,8 +117,13 @@ export class QuickurrenceMerge {
       try {
         const nextOccurrence = rule.getNextOccurrence(after);
         nextOccurrences.push(nextOccurrence);
-      } catch {
-        // Ignore rules that have no more occurrences
+      } catch (error) {
+        // Only exhaustion is expected and ignorable here. Swallowing everything
+        // reported a bad `after` argument as NO_MORE_OCCURRENCES, hiding the
+        // real cause behind an error that says the rules are simply used up.
+        if (!QuickurrenceMerge.isExhaustionError(error)) {
+          throw error;
+        }
         continue;
       }
     }
@@ -315,7 +340,7 @@ export class QuickurrenceMerge {
   /**
    * Not supported for merged rules - throws error
    */
-  getCondition(): boolean | ((date: Date) => boolean) | undefined {
+  getCondition(): Condition | undefined {
     throw QuickurrenceError.unsupportedOperation(
       'getCondition() is not supported for merged rules',
       QuickurrenceErrorCode.UNSUPPORTED_FOR_MERGED_RULES,

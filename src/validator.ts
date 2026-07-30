@@ -1,5 +1,20 @@
-import { isBefore } from 'date-fns';
+import { isBefore } from './compare';
+// The option arrays and `isOneOf` come from the shared internal module rather
+// than being restated, so this validator and the zod schemas in `./index`
+// accept exactly the same values. Restating them is what let the two layers
+// drift apart. Sourcing them from `./options` instead of `./index` also keeps
+// the only edge to `./index` type-only, so there is no runtime import cycle.
+import {
+  dayOptions,
+  isOneOf,
+  monthDayModeOptions,
+  monthDayOptions,
+  nthWeekdayOfMonthOptions,
+  presetOptions,
+  recurrenceRulesOptions,
+} from './options';
 import type {
+  Condition,
   RecurrenceRule,
   WeekDay,
   MonthDay,
@@ -69,11 +84,9 @@ export class QuickurrenceValidator {
     rule: RecurrenceRule | undefined,
     weekDays: WeekDay[] | undefined,
   ): void {
-    if (!weekDays) return;
+    if (weekDays === undefined) return;
 
-    if (rule === undefined) return;
-
-    if (rule !== 'weekly') {
+    if (rule !== undefined && rule !== 'weekly') {
       throw QuickurrenceError.configuration(
         'weekDays option is only valid for weekly recurrence',
         QuickurrenceErrorCode.INCOMPATIBLE_OPTIONS,
@@ -81,6 +94,20 @@ export class QuickurrenceValidator {
           option: 'weekDays',
           rule,
           expected: 'weekly recurrence rule',
+        },
+      );
+    }
+
+    // Shape is checked even when no rule is given: the rule is optional, the
+    // values are not, and the schema rejects them regardless of the rule.
+    if (!Array.isArray(weekDays)) {
+      throw QuickurrenceError.validation(
+        'weekDays must be an array of weekday values',
+        QuickurrenceErrorCode.INVALID_WEEKDAYS,
+        {
+          option: 'weekDays',
+          value: weekDays,
+          expected: `Array of weekday values (${dayOptions.join(', ')})`,
         },
       );
     }
@@ -97,7 +124,8 @@ export class QuickurrenceValidator {
       );
     }
 
-    const invalidDays = weekDays.filter((day) => day < 0 || day > 6);
+    const isWeekDay = isOneOf(dayOptions);
+    const invalidDays = weekDays.filter((day) => !isWeekDay(day));
     if (invalidDays.length > 0) {
       throw QuickurrenceError.validation(
         `Invalid weekDays values: ${invalidDays.join(', ')}. Values must be between 0-6`,
@@ -133,12 +161,10 @@ export class QuickurrenceValidator {
     monthDayMode: string | undefined,
     nthWeekdayOfMonth: NthWeekdayConfig | undefined,
   ): void {
-    if (rule === undefined) return;
-
     if (
-      (monthDay !== undefined ||
-        (monthDayMode !== undefined && monthDay === undefined)) &&
-      rule !== 'monthly'
+      rule !== undefined &&
+      rule !== 'monthly' &&
+      (monthDay !== undefined || monthDayMode !== undefined)
     ) {
       throw QuickurrenceError.configuration(
         'monthDay and monthDayMode options are only valid for monthly recurrence',
@@ -151,25 +177,24 @@ export class QuickurrenceValidator {
       );
     }
 
-    if (monthDay !== undefined) {
-      if (monthDay < 1 || monthDay > 31) {
-        throw QuickurrenceError.validation(
-          'monthDay must be between 1-31',
-          QuickurrenceErrorCode.INVALID_MONTH_DAY,
-          {
-            option: 'monthDay',
-            value: monthDay,
-            expected: 'Integer between 1-31',
-          },
-        );
-      }
+    // Value checks run whether or not a rule is given, matching the schema.
+    if (monthDay !== undefined && !isOneOf(monthDayOptions)(monthDay)) {
+      throw QuickurrenceError.validation(
+        'monthDay must be between 1-31',
+        QuickurrenceErrorCode.INVALID_MONTH_DAY,
+        {
+          option: 'monthDay',
+          value: monthDay,
+          expected: 'Integer between 1-31',
+        },
+      );
     }
 
     if (monthDayMode !== undefined) {
       this.validateMonthDayMode(monthDayMode);
     }
 
-    if (nthWeekdayOfMonth && rule !== 'monthly') {
+    if (nthWeekdayOfMonth !== undefined && rule !== undefined && rule !== 'monthly') {
       throw QuickurrenceError.configuration(
         'nthWeekdayOfMonth option is only valid for monthly recurrence',
         QuickurrenceErrorCode.INCOMPATIBLE_OPTIONS,
@@ -181,7 +206,7 @@ export class QuickurrenceValidator {
       );
     }
 
-    if (nthWeekdayOfMonth) {
+    if (nthWeekdayOfMonth !== undefined) {
       this.validateNthWeekdayConfig(nthWeekdayOfMonth);
     }
   }
@@ -190,9 +215,21 @@ export class QuickurrenceValidator {
    * Validate nthWeekdayOfMonth configuration
    */
   private static validateNthWeekdayConfig(config: NthWeekdayConfig): void {
+    if (config === null || typeof config !== 'object') {
+      throw QuickurrenceError.validation(
+        'nthWeekdayOfMonth must be an object with weekday and nth properties',
+        QuickurrenceErrorCode.INVALID_NTH_WEEKDAY,
+        {
+          option: 'nthWeekdayOfMonth',
+          value: config,
+          expected: '{ weekday: 0-6, nth: 1 | 2 | 3 | 4 | "last" }',
+        },
+      );
+    }
+
     const { weekday, nth } = config;
 
-    if (weekday < 0 || weekday > 6) {
+    if (!isOneOf(dayOptions)(weekday)) {
       throw QuickurrenceError.validation(
         `Invalid weekday in nthWeekdayOfMonth: ${weekday}. Weekday must be between 0-6`,
         QuickurrenceErrorCode.INVALID_NTH_WEEKDAY,
@@ -204,21 +241,9 @@ export class QuickurrenceValidator {
       );
     }
 
-    if (typeof nth === 'number' && (nth < 1 || nth > 4)) {
+    if (!isOneOf(nthWeekdayOfMonthOptions)(nth)) {
       throw QuickurrenceError.validation(
-        `Invalid nth in nthWeekdayOfMonth: ${nth}. Nth must be 1, 2, 3, 4, or 'last'`,
-        QuickurrenceErrorCode.INVALID_NTH_WEEKDAY,
-        {
-          option: 'nthWeekdayOfMonth.nth',
-          value: nth,
-          expected: '1, 2, 3, 4, or "last"',
-        },
-      );
-    }
-
-    if (typeof nth === 'string' && nth !== 'last') {
-      throw QuickurrenceError.validation(
-        `Invalid nth in nthWeekdayOfMonth: ${nth}. Nth must be 1, 2, 3, 4, or 'last'`,
+        `Invalid nth in nthWeekdayOfMonth: ${String(nth)}. Nth must be 1, 2, 3, 4, or 'last'`,
         QuickurrenceErrorCode.INVALID_NTH_WEEKDAY,
         {
           option: 'nthWeekdayOfMonth.nth',
@@ -237,7 +262,7 @@ export class QuickurrenceValidator {
     nthWeekdayOfMonth?: NthWeekdayConfig,
     count?: number,
     endDate?: Date,
-    condition?: boolean | ((date: Date) => boolean),
+    condition?: Condition,
     preset?: Preset,
   ): void {
     if (monthDay !== undefined && nthWeekdayOfMonth) {
@@ -294,7 +319,19 @@ export class QuickurrenceValidator {
    * Validate excludeDates option
    */
   private static validateExcludeDates(excludeDates?: Date[]): void {
-    if (!excludeDates) return;
+    if (excludeDates === undefined) return;
+
+    if (!Array.isArray(excludeDates)) {
+      throw QuickurrenceError.validation(
+        'excludeDates must be an array of Date objects',
+        QuickurrenceErrorCode.INVALID_EXCLUDE_DATES,
+        {
+          option: 'excludeDates',
+          value: excludeDates,
+          expected: 'Array of valid Date objects',
+        },
+      );
+    }
 
     if (excludeDates.length === 0) {
       throw QuickurrenceError.validation(
@@ -330,20 +367,14 @@ export class QuickurrenceValidator {
   private static validateRule(rule: RecurrenceRule | undefined): void {
     if (rule === undefined) return;
 
-    const validRules: RecurrenceRule[] = [
-      'daily',
-      'weekly',
-      'monthly',
-      'yearly',
-    ];
-    if (!validRules.includes(rule)) {
+    if (!isOneOf(recurrenceRulesOptions)(rule)) {
       throw QuickurrenceError.configuration(
-        `Unsupported recurrence rule: ${rule}`,
+        `Unsupported recurrence rule: ${String(rule)}`,
         QuickurrenceErrorCode.UNSUPPORTED_RULE,
         {
           option: 'rule',
           value: rule,
-          expected: `One of: ${validRules.join(', ')}`,
+          expected: `One of: ${recurrenceRulesOptions.join(', ')}`,
         },
       );
     }
@@ -355,15 +386,14 @@ export class QuickurrenceValidator {
   private static validatePreset(preset?: Preset): void {
     if (preset === undefined) return;
 
-    const validPresets: Preset[] = ['businessDays', 'weekends'];
-    if (!validPresets.includes(preset)) {
+    if (!isOneOf(presetOptions)(preset)) {
       throw QuickurrenceError.configuration(
-        `Unsupported preset: ${preset}`,
+        `Unsupported preset: ${String(preset)}`,
         QuickurrenceErrorCode.UNSUPPORTED_PRESET,
         {
           option: 'preset',
           value: preset,
-          expected: `One of: ${validPresets.join(', ')}`,
+          expected: `One of: ${presetOptions.join(', ')}`,
         },
       );
     }
@@ -512,11 +542,7 @@ export class QuickurrenceValidator {
   private static validateWeekStartsOn(weekStartsOn?: number): void {
     if (weekStartsOn === undefined) return;
 
-    if (
-      !Number.isInteger(weekStartsOn) ||
-      weekStartsOn < 0 ||
-      weekStartsOn > 6
-    ) {
+    if (!isOneOf(dayOptions)(weekStartsOn)) {
       throw QuickurrenceError.validation(
         'weekStartsOn must be an integer between 0-6',
         QuickurrenceErrorCode.INVALID_WEEK_STARTS_ON,
@@ -532,9 +558,7 @@ export class QuickurrenceValidator {
   /**
    * Validate condition option
    */
-  private static validateCondition(
-    condition?: boolean | ((date: Date) => boolean),
-  ): void {
+  private static validateCondition(condition?: Condition): void {
     if (condition === undefined) return;
 
     if (typeof condition !== 'boolean' && typeof condition !== 'function') {
@@ -602,15 +626,14 @@ export class QuickurrenceValidator {
    * Validate monthDayMode option
    */
   private static validateMonthDayMode(monthDayMode: string): void {
-    const validModes = ['skip', 'last'];
-    if (!validModes.includes(monthDayMode)) {
+    if (!isOneOf(monthDayModeOptions)(monthDayMode)) {
       throw QuickurrenceError.validation(
-        `monthDayMode must be one of: ${validModes.join(', ')}. Got: ${monthDayMode}`,
+        `monthDayMode must be one of: ${monthDayModeOptions.join(', ')}. Got: ${String(monthDayMode)}`,
         QuickurrenceErrorCode.INVALID_MONTH_DAY_MODE,
         {
           option: 'monthDayMode',
           value: monthDayMode,
-          expected: `One of: ${validModes.join(', ')}`,
+          expected: `One of: ${monthDayModeOptions.join(', ')}`,
         },
       );
     }

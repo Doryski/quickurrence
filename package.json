@@ -8,9 +8,14 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
   "files": [
@@ -22,6 +27,11 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest --run",
+    "test:tz": "tsx scripts/tz-sweep.ts --zones UTC,Pacific/Auckland,America/Los_Angeles",
+    "test:tz:danger": "tsx scripts/tz-sweep.ts --zones UTC,Pacific/Auckland,America/Los_Angeles,America/Havana,Atlantic/Azores,Asia/Beirut,Africa/Cairo,America/Scoresbysund,America/Nuuk,America/Santiago,America/Asuncion,Pacific/Chatham,Australia/Lord_Howe,Asia/Kathmandu,Pacific/Kiritimati",
+    "test:tz:all": "tsx scripts/tz-sweep.ts",
+    "test:tz:manifest": "tsx scripts/tz-sweep.ts --write-manifest",
+    "test:tz:offsets": "tsx scripts/enumerate-offsets.ts",
     "test:watch": "vitest --watch",
     "type-check": "tsc --noEmit",
     "release": "doryski-release",
@@ -37,7 +47,6 @@
     "rrule",
     "repeat",
     "timezone",
-    "date-fns",
     "zod",
     "typescript"
   ],
@@ -52,20 +61,21 @@
   },
   "homepage": "https://github.com/Doryski/quickurrence#readme",
   "peerDependencies": {
-    "@date-fns/tz": ">=1.0.0",
-    "date-fns": ">=4.0.0",
-    "zod": ">=3.0.0"
+    "zod": ">=4.0.0"
   },
   "devDependencies": {
+    "@date-fns/tz": "^1.4.1",
     "@date-fns/utc": "^2.1.1",
     "@doryski/release": "^1.0.0",
     "@types/node": "^25.6.0",
     "@vitest/coverage-v8": "^3.2.4",
     "commander": "^14.0.3",
+    "date-fns": "^4.1.0",
     "tsup": "^8.4.0",
     "tsx": "^4.0.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "zod": "4.3.6"
   },
   "engines": {
     "node": ">=20"

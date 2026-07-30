@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
 
 jobs:
   build-and-test:
@@ -28,8 +31,192 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm build
+      # Every tz script shells out to scripts/tz-sweep.ts. If scripts/ was never
+      # committed, pnpm reports a bare "module not found" that looks like a
+      # dependency problem, so fail with the real cause instead.
+      - name: Check the tz sweep is committed
+        run: |
+          test -f scripts/tz-sweep.ts || {
+            echo "scripts/tz-sweep.ts is missing from this checkout."
+            echo "scripts/ must be tracked in git. This step needs BOTH the sweep"
+            echo "and the test manifest, so add them together or the next run is"
+            echo "still red on the check below:"
+            echo "  git add scripts/tz-sweep.ts scripts/enumerate-offsets.ts scripts/expected-tests.json"
+            exit 1
+          }
+          # The sweep refuses to run without it, on purpose: without the manifest
+          # it cannot tell a passing suite from a deleted one.
+          test -f scripts/expected-tests.json || {
+            echo "scripts/expected-tests.json is missing from this checkout."
+            echo "Regenerate it with 'pnpm test:tz:manifest', then commit it"
+            echo "alongside the sweep scripts:"
+            echo "  git add scripts/expected-tests.json scripts/tz-sweep.ts scripts/enumerate-offsets.ts"
+            exit 1
+          }
+
+      # A shipped source that was never `git add`ed is invisible on the author's
+      # machine (the build works there) and absent from this checkout, so the
+      # package is unbuildable for everyone else. `src/compare.ts` AND
+      # `src/options.ts` are both in exactly that state on the author's tree, so
+      # the remedy below prints every offender, not the first.
+      # Two halves, because neither alone is enough:
+      #   - the `git ls-files` diff is the one a contributor can run locally,
+      #     where the untracked file still exists on disk;
+      #   - in a CI checkout only tracked files exist, so that diff is always
+      #     empty here and the build is what actually detects the omission.
+      - name: Check every shipped source is committed
+        run: |
+          untracked=$(comm -23 \
+            <(find src -type f \( -name '*.ts' -o -name '*.cts' -o -name '*.mts' \) ! -name '*.test.ts' | sort) \
+            <(git ls-files src | sort))
+          if [ -n "$untracked" ]; then
+            echo "These shipped sources are not tracked in git:"
+            echo "$untracked"
+            # `tr` rather than an unquoted `$(echo $untracked)`: that relies on
+            # word splitting, which bash does and zsh does not, so the printed
+            # remedy silently became a broken multi-line command when anyone
+            # ran the equivalent locally under zsh. This lists every file, and
+            # lists them all on one line, in any shell.
+            echo "Commit them all (not just the first): git add $(echo "$untracked" | tr '\n' ' ')"
+            exit 1
+          fi
+
+      # Source-level twin of the artifact check below. Matches every specifier
+      # form (single/double quotes, static, dynamic `import(...)`, `require`,
+      # type-only, indented, any depth under src/) and excludes test files by
+      # *filename*, not by line content.
+      - name: Check no shipped source imports a date library
+        run: |
+          if grep -rnE "(from|import|require)[[:space:]]*\(?[[:space:]]*['\"]@?date-fns" src \
+               --include='*.ts' --include='*.cts' --include='*.mts' \
+               --include='*.js' --include='*.cjs' --include='*.mjs' \
+               --exclude='*.test.*'; then
+            echo "Shipped sources must not import date-fns or @date-fns/* (see above)."
+            echo "They are devDependencies: test files may use them, shipped code may not."
+            exit 1
+          fi
+
+      - name: Build
+        run: |
+          pnpm build || {
+            echo
+            echo "If the error above is 'Could not resolve ./<name>', src/<name>.ts"
+            echo "exists on the author's machine but was never committed. Run"
+            echo "'git status --short src' there and add it."
+            echo
+            echo "If it is 'Shipped code must not import ...', a shipped file"
+            echo "imports date-fns or @date-fns/*, which are devDependencies."
+            exit 1
+          }
+
+      # The build only fails on a *value* import of a date library; a type-only
+      # import is erased before esbuild resolves it. Assert the artifacts too:
+      # no bare date-lib specifier and no inlined date-fns internals.
+      - name: Check no date library reached the package
+        run: |
+          if grep -nE "['\"]@?date-fns|constructDateFrom" \
+               dist/index.js dist/index.cjs dist/index.d.ts dist/index.d.cts; then
+            echo "A date library reached the published artifacts (see above)."
+            exit 1
+          fi
+          specifiers=$(grep -ohE 'from "[^"]+"|require\("[^"]+"\)' dist/index.js dist/index.cjs | sort -u)
+          expected=$'from "zod"\nrequire("zod")'
+          if [ "$specifiers" != "$expected" ]; then
+            echo "Unexpected module specifiers in the bundle:"
+            echo "$specifiers"
+            echo "Expected exactly:"
+            echo "$expected"
+            exit 1
+          fi
 
       - run: pnpm type-check
 
-      - run: pnpm test
+      # Fast gate: UTC, Pacific/Auckland (calendar day ahead of Europe/Warsaw)
+      # and America/Los_Angeles (behind it). Delegated to the sweep, so every
+      # zone runs and every failure is reported even when an earlier zone is red
+      # — the old `&&` chain hid Auckland and Los_Angeles behind a UTC failure.
+      - run: pnpm test:tz
+        env:
+          TZ_SWEEP_CONCURRENCY: 4
+
+      # Zones that have empirically broken this library (spring-forward at local
+      # midnight, sub-hour offsets, southern-hemisphere and non-Sunday
+      # transitions). 15 zones, UTC among them, so 15 of the exhaustive sweep's
+      # 69 runs — cheap enough to gate every PR, unlike that sweep.
+      - run: pnpm test:tz:danger
+        env:
+          TZ_SWEEP_CONCURRENCY: 4
+
+      # toHumanText must follow the ambient locale, not a pinned 'en-US'. That
+      # cannot be asserted in-process on an en-US host, so the suite gets one
+      # run under a non-en-US default locale: if the locale is ever hardcoded
+      # again, the 'formats endDate in the rule timezone using the host locale'
+      # test fails here and nowhere else.
+      - name: Test under a non-en-US locale
+        run: pnpm test
+        env:
+          LC_ALL: de_DE.UTF-8
+          LANG: de_DE.UTF-8
+
+  timezone-sweep:
+    # One representative zone per distinct 2024-2026 DST schedule, recomputed
+    # from the runtime's tzdata: 68 classes on ICU 76.1 / tzdata 2024b. The
+    # earlier 5-instant sampling produced only 60, which let
+    # America/Scoresbysund hide inside another class while it was red. Both
+    # numbers come from `pnpm test:tz:offsets` (classCount, legacyClassCount) —
+    # recompute rather than trust these.
+    #
+    # Not a PR gate for one reason only: wall-clock cost. The full suite runs
+    # once per class, so this is 69 full vitest runs (68 classes + the UTC
+    # reference) and the cost grows with both the class count and the test
+    # count in scripts/expected-tests.json. No wall-clock figure is recorded
+    # here on purpose: every one that has been written down went stale the next
+    # time the suite grew. Measure with `/usr/bin/time -p pnpm test:tz:all`
+    # when you need it. A 2-core ubuntu-latest runner is slower than a dev
+    # laptop and has not been measured, hence the 4-way shard below and the
+    # schedule/dispatch trigger; PRs get test:tz + test:tz:danger instead.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check the tz sweep is committed
+        run: |
+          test -f scripts/tz-sweep.ts || {
+            echo "scripts/tz-sweep.ts is missing from this checkout."
+            echo "scripts/ must be tracked in git. This step needs BOTH the sweep"
+            echo "and the test manifest, so add them together or the next run is"
+            echo "still red on the check below:"
+            echo "  git add scripts/tz-sweep.ts scripts/enumerate-offsets.ts scripts/expected-tests.json"
+            exit 1
+          }
+          # The sweep refuses to run without it, on purpose: without the manifest
+          # it cannot tell a passing suite from a deleted one.
+          test -f scripts/expected-tests.json || {
+            echo "scripts/expected-tests.json is missing from this checkout."
+            echo "Regenerate it with 'pnpm test:tz:manifest', then commit it"
+            echo "alongside the sweep scripts:"
+            echo "  git add scripts/expected-tests.json scripts/tz-sweep.ts scripts/enumerate-offsets.ts"
+            exit 1
+          }
+
+      # Explicit rather than inherited from os.cpus(): the runner size must not
+      # silently change the sweep's runtime or its per-zone memory pressure.
+      - run: pnpm test:tz:all -- --shard ${{ matrix.shard }}/4
+        env:
+          TZ_SWEEP_CONCURRENCY: 4

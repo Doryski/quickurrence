@@ -1,87 +1,111 @@
-import { tz, TZDate } from '@date-fns/tz';
-import {
-  addDays,
-  addMonths,
-  addWeeks,
-  addYears,
-  type Day,
-  getDay,
-  getDaysInMonth,
-  isAfter,
-  isBefore,
-  isEqual,
-  lastDayOfMonth,
-  nextDay,
-  setHours,
-  setMilliseconds,
-  setMinutes,
-  setSeconds,
-  startOfDay,
-  startOfWeek,
-} from 'date-fns';
 import { z } from 'zod';
+import { isAfter, isBefore, isEqual } from './compare';
 import { QuickurrenceError, QuickurrenceErrorCode } from './error';
 import { QuickurrenceValidator } from './validator';
+import {
+  dayOptions,
+  isOneOf,
+  MAX_NEXT_OCCURENCES,
+  monthDayModeOptions,
+  monthDayOptions,
+  nthWeekdayOfMonthOptions,
+  presetOptions,
+  recurrenceRulesOptions,
+} from './options';
 
-export const recurrenceRulesOptions = [
-  'daily',
-  'weekly',
-  'monthly',
-  'yearly',
-] as const;
+export { recurrenceRulesOptions };
+
 export type RecurrenceRule = (typeof recurrenceRulesOptions)[number];
 export const RecurrenceRuleSchema = z.enum(recurrenceRulesOptions);
-const _presetOptions = ['businessDays', 'weekends'] as const;
-const PresetSchema = z.enum(_presetOptions);
-export type Preset = (typeof _presetOptions)[number];
+const PresetSchema = z.enum(presetOptions);
+export type Preset = (typeof presetOptions)[number];
 export const DateRangeSchema = z.object({
   start: z.date(),
   end: z.date(),
 });
 export type DateRange = z.infer<typeof DateRangeSchema>;
-export const WeekStartsOnSchema = z.custom<Day>();
+type Day = (typeof dayOptions)[number];
+// `z.custom<T>(predicate)` is the only form that keeps the literal-union type T
+// intact; `z.number().min(0).max(6)` would widen the public types to `number`.
+// Without a predicate `z.custom` accepts anything, so every schema below must
+// pass one.
+export const WeekStartsOnSchema = z.custom<Day>(isOneOf(dayOptions));
 export type WeekStartsOn = z.infer<typeof WeekStartsOnSchema>; // 0 = Sunday, 1 = Monday, 2 = Tuesday, etc.
-export const WeekDaySchema = z.custom<Day>();
+export const WeekDaySchema = z.custom<Day>(isOneOf(dayOptions));
 export type WeekDay = z.infer<typeof WeekDaySchema>; // 0 = Sunday, 1 = Monday, 2 = Tuesday, etc.
-const _monthDayOptions = [
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-  23, 24, 25, 26, 27, 28, 29, 30, 31,
-] as const;
-export type MonthDay = (typeof _monthDayOptions)[number];
-export const MonthDaySchema = z.custom<MonthDay>();
-const _monthDayModeOptions = ['skip', 'last'] as const;
-const MonthDayModeSchema = z.enum(_monthDayModeOptions);
-export type MonthDayMode = (typeof _monthDayModeOptions)[number];
+export type MonthDay = (typeof monthDayOptions)[number];
+export const MonthDaySchema = z.custom<MonthDay>(isOneOf(monthDayOptions));
+const MonthDayModeSchema = z.enum(monthDayModeOptions);
+export type MonthDayMode = (typeof monthDayModeOptions)[number];
 
-const _nthWeekdayOfMonthOptions = [1, 2, 3, 4, 'last'] as const;
-export type NthWeekdayOfMonth = (typeof _nthWeekdayOfMonthOptions)[number];
-export const NthWeekdayOfMonthSchema = z.custom<NthWeekdayOfMonth>();
+export type NthWeekdayOfMonth = (typeof nthWeekdayOfMonthOptions)[number];
+export const NthWeekdayOfMonthSchema = z.custom<NthWeekdayOfMonth>(
+  isOneOf(nthWeekdayOfMonthOptions),
+);
 const _nthWeekdayConfigSchema = z.object({
   weekday: WeekDaySchema,
   nth: NthWeekdayOfMonthSchema,
 });
-const NthWeekdayConfigSchema = z.custom<NthWeekdayConfig>();
 export type NthWeekdayConfig = z.infer<typeof _nthWeekdayConfigSchema>;
-export type Condition = boolean | ((date: Date) => boolean);
-const ConditionSchema = z.custom<Condition>().refine(
-  (val): val is Condition => {
-    if (typeof val === 'boolean') {
-      return true;
-    }
 
-    if (typeof val !== 'function') {
-      return false;
-    }
+const hasUniqueEntries = (values: readonly unknown[]) =>
+  new Set(values).size === values.length;
+/**
+ * Wall-clock fields of an instant, read in the rule's timezone.
+ *
+ * Every field describes the rule timezone, never the host timezone, so a
+ * condition can branch on the calendar the rule is expressed in.
+ *
+ * When these parts are handed to a {@link Condition}, the instant is always a
+ * candidate DAY's midnight in the rule timezone, so `hour`, `minute`, `second`
+ * and `ms` are always `0` there — see {@link Condition} for why.
+ */
+export type ZonedParts = {
+  /** Full year. Years before 1 CE are negative (1 BCE is `0`). */
+  year: number;
+  /** 0-based, matching `Date.prototype.getMonth`: 0 = January, 11 = December. */
+  month: number;
+  /** Day of the month, 1-31. */
+  day: number;
+  /** Day of the week, 0 = Sunday through 6 = Saturday. */
+  weekday: number;
+  /** Hour, 0-23. Always `0` when supplied to a {@link Condition}. */
+  hour: number;
+  /** Minute, 0-59. Always `0` when supplied to a {@link Condition}. */
+  minute: number;
+  /** Second, 0-59. Always `0` when supplied to a {@link Condition}. */
+  second: number;
+  /** Milliseconds, 0-999. Always `0` when supplied to a {@link Condition}. */
+  ms: number;
+};
 
-    try {
-      // Test the function with a sample date to ensure it accepts Date and returns boolean
-      const testDate = new Date('2025-01-01T00:00:00.000Z');
-      const result = val(testDate);
-      return typeof result === 'boolean';
-    } catch {
-      return false;
-    }
-  },
+/**
+ * A rule-level filter: either a constant, or a predicate run against every
+ * candidate DAY the rule produces.
+ *
+ * The predicate receives two arguments, and both describe a day, not an
+ * instant within it:
+ * - `date` — the start of the candidate day, at 00:00 in the RULE timezone.
+ *   It is NOT the occurrence's own time of day. It is a plain `Date`, so its
+ *   own accessors (`getHours()`, `getDay()`, …) report the HOST timezone, not
+ *   the rule timezone — read `parts` instead.
+ * - `parts` — that same midnight instant's wall-clock fields in the RULE
+ *   timezone; see {@link ZonedParts}.
+ *
+ * Granularity, including with `timesOfDay`: the predicate is invoked ONCE PER
+ * CANDIDATE DAY, never once per time-of-day slot. Slot expansion happens after
+ * this filter runs, so `parts.hour`, `parts.minute`, `parts.second` and
+ * `parts.ms` are always `0` and a condition can only keep or drop a whole day —
+ * it cannot select among that day's slots. Rejecting a day drops every slot on
+ * it. To filter individual times, narrow `timesOfDay` itself.
+ */
+export type Condition = boolean | ((date: Date, parts: ZonedParts) => boolean);
+// Shape only. Calling the predicate to smoke-test its return value would run
+// consumer code during validation: a side-effectful predicate would fire on a
+// fabricated date, and one that legitimately throws outside its data range
+// would sink an otherwise valid rule.
+const ConditionSchema = z.custom<Condition>(
+  (val) => typeof val === 'function' || typeof val === 'boolean',
   {
     message:
       'Must be a boolean or a function that accepts a Date and returns a boolean',
@@ -93,8 +117,16 @@ export const TimeOfDaySchema = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Must be "HH:MM" in 24-hour format');
 export type TimeOfDay = z.infer<typeof TimeOfDaySchema>;
-export const TimesOfDaySchema = z.array(TimeOfDaySchema).min(1);
+export const TimesOfDaySchema = z
+  .array(TimeOfDaySchema)
+  .min(1)
+  .refine(hasUniqueEntries, { message: 'Must not contain duplicate values' });
 export type TimesOfDay = z.infer<typeof TimesOfDaySchema>;
+const WeekDaysSchema = z
+  .array(WeekDaySchema)
+  .min(1)
+  .refine(hasUniqueEntries, { message: 'Must not contain duplicate values' });
+const ExcludeDatesSchema = z.array(z.date()).min(1);
 export const QuickurrenceOptionsSchema = z.object({
   startDate: z.date().optional(),
   rule: RecurrenceRuleSchema.optional(),
@@ -103,11 +135,11 @@ export const QuickurrenceOptionsSchema = z.object({
   endDate: z.date().optional(),
   count: CountSchema.optional(),
   weekStartsOn: WeekStartsOnSchema.optional(),
-  weekDays: z.array(WeekDaySchema).optional(),
+  weekDays: WeekDaysSchema.optional(),
   monthDay: MonthDaySchema.optional(),
   monthDayMode: MonthDayModeSchema.optional(),
-  nthWeekdayOfMonth: NthWeekdayConfigSchema.optional(),
-  excludeDates: z.array(z.date()).optional(),
+  nthWeekdayOfMonth: _nthWeekdayConfigSchema.optional(),
+  excludeDates: ExcludeDatesSchema.optional(),
   condition: ConditionSchema.optional(),
   preset: PresetSchema.optional(),
   timesOfDay: TimesOfDaySchema.optional(),
@@ -115,13 +147,28 @@ export const QuickurrenceOptionsSchema = z.object({
 export type QuickurrenceOptions = z.infer<typeof QuickurrenceOptionsSchema>;
 
 /**
- * Safety cap on the number of occurrences collected in a single call. Rules
- * without a count/endDate are effectively infinite, so collection is truncated
- * at this many matches to bound memory and runtime. Sparse rules (heavy
- * exclusions or restrictive conditions) are additionally bounded by an
- * iteration cap so that scanning a range can never loop unbounded.
+ * Maps a failing option to the same error code the constructor's validator
+ * would raise for it, so a schema rejection is as actionable as a validator
+ * rejection.
  */
-const MAX_NEXT_OCCURENCES = 1000;
+const _optionErrorCodes = {
+  startDate: QuickurrenceErrorCode.INVALID_START_DATE,
+  endDate: QuickurrenceErrorCode.INVALID_END_DATE,
+  timezone: QuickurrenceErrorCode.INVALID_TIMEZONE,
+  interval: QuickurrenceErrorCode.INVALID_INTERVAL,
+  count: QuickurrenceErrorCode.INVALID_COUNT,
+  weekStartsOn: QuickurrenceErrorCode.INVALID_WEEK_STARTS_ON,
+  weekDays: QuickurrenceErrorCode.INVALID_WEEKDAYS,
+  monthDay: QuickurrenceErrorCode.INVALID_MONTH_DAY,
+  monthDayMode: QuickurrenceErrorCode.INVALID_MONTH_DAY_MODE,
+  nthWeekdayOfMonth: QuickurrenceErrorCode.INVALID_NTH_WEEKDAY,
+  excludeDates: QuickurrenceErrorCode.INVALID_EXCLUDE_DATES,
+  condition: QuickurrenceErrorCode.INVALID_CONDITION,
+  timesOfDay: QuickurrenceErrorCode.INVALID_TIMES_OF_DAY,
+  rule: QuickurrenceErrorCode.UNSUPPORTED_RULE,
+  preset: QuickurrenceErrorCode.UNSUPPORTED_PRESET,
+} as const;
+
 const MAX_COLLECTION_ITERATIONS = 500_000;
 const DAY_MS = 86_400_000;
 const DAY_NAMES = [
@@ -143,6 +190,289 @@ export {
 export { QuickurrenceMerge } from './merge';
 export { QuickurrenceValidator } from './validator';
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * The primitives below run before `QuickurrenceValidator.validateOptions`
+ * (normalizing a start date needs a timezone), and the validator only
+ * regex-checks the identifier's shape. Without this wrapper a well-formed but
+ * unknown zone would surface as a bare `RangeError` from Intl.
+ */
+const buildFormatter = (timeZone: string) => {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      era: 'short',
+      weekday: 'short',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  } catch {
+    throw QuickurrenceError.validation(
+      'timezone must be a valid timezone identifier',
+      QuickurrenceErrorCode.INVALID_TIMEZONE,
+      {
+        option: 'timezone',
+        value: timeZone,
+        expected:
+          'Valid IANA timezone identifier (e.g., UTC, America/New_York)',
+      },
+    );
+  }
+};
+
+const formatterFor = (timeZone: string) => {
+  const cached = formatters.get(timeZone);
+  if (cached) {
+    return cached;
+  }
+  const formatter = buildFormatter(timeZone);
+  formatters.set(timeZone, formatter);
+  return formatter;
+};
+
+/**
+ * `Date.UTC` remaps years 0-99 onto 1900-1999 (the ECMAScript two-digit-year
+ * rule), so every wall-clock-to-epoch conversion goes through here. Shifting an
+ * affected year by one full 400-year Gregorian cycle dodges the remap while
+ * keeping leap years, month lengths and out-of-range component rollover
+ * identical to the unshifted calendar.
+ */
+const utcInstantFromParts = (
+  year: number,
+  month: number,
+  day: number,
+  hour = 0,
+  minute = 0,
+  second = 0,
+  ms = 0,
+) => {
+  if (year < 0 || year > 99) {
+    return Date.UTC(year, month, day, hour, minute, second, ms);
+  }
+  const shifted = new Date(
+    Date.UTC(year + 400, month, day, hour, minute, second, ms),
+  );
+  shifted.setUTCFullYear(shifted.getUTCFullYear() - 400);
+  return shifted.getTime();
+};
+
+/**
+ * Wall-clock parts of `instant` as seen in `timeZone`.
+ *
+ * Only `Intl.DateTimeFormat` with an explicit `timeZone` is used, so the host
+ * timezone is never consulted. That matters because the usual timezone
+ * libraries route wall-clock construction through the host's wall clock even
+ * when an explicit timezone context is supplied, which leaks the host's DST
+ * gaps into results computed for an unrelated rule timezone.
+ */
+const zonedParts = (instant: number, timeZone: string): ZonedParts => {
+  const formatter = formatterFor(timeZone);
+  // `formatToParts` throws a bare `RangeError: Invalid time value` on a
+  // non-finite instant. Garbage inputs (an Invalid Date in the range, a
+  // non-numeric weekDays entry) reach here as NaN after arithmetic, and callers
+  // expect them to degrade to an invalid date rather than throw, so NaN is
+  // propagated through the parts instead: every downstream comparison then
+  // fails and collection yields nothing.
+  if (!Number.isFinite(instant)) {
+    return {
+      year: Number.NaN,
+      month: Number.NaN,
+      day: Number.NaN,
+      hour: Number.NaN,
+      minute: Number.NaN,
+      second: Number.NaN,
+      ms: Number.NaN,
+      weekday: Number.NaN,
+    };
+  }
+  const parts = formatter.formatToParts(instant);
+  const num = (type: string) =>
+    Number(parts.find((part) => part.type === type)!.value);
+  const era = parts.find((part) => part.type === 'era')!.value;
+  const yearRaw = num('year');
+  const weekdayName = parts.find((part) => part.type === 'weekday')!.value;
+
+  return {
+    year: era.startsWith('B') ? 1 - yearRaw : yearRaw,
+    month: num('month') - 1,
+    day: num('day'),
+    hour: num('hour'),
+    minute: num('minute'),
+    second: num('second'),
+    // formatToParts truncates to whole seconds, so milliseconds come from the epoch.
+    ms: ((instant % 1000) + 1000) % 1000,
+    weekday: WEEKDAYS.indexOf(weekdayName as (typeof WEEKDAYS)[number]),
+  };
+};
+
+/** Offset east of UTC, in ms, that `timeZone` was at `instant`. */
+const zoneOffsetMsAt = (instant: number, timeZone: string) => {
+  const { year, month, day, hour, minute, second, ms } = zonedParts(
+    instant,
+    timeZone,
+  );
+  return (
+    utcInstantFromParts(year, month, day, hour, minute, second, ms) - instant
+  );
+};
+
+/**
+ * Resolve a wall clock in `timeZone` to an epoch, by guessing and correcting to
+ * a fixed point.
+ *
+ * For wall clocks that exist exactly once the result is the obvious one. For
+ * the rest the rule is mechanical rather than semantic: the offset applied is
+ * whichever one `timeZone` is in effect at the instant obtained by reading the
+ * requested wall clock as if it were UTC. Which side of a transition that
+ * lands on depends on the zone and on the transition's UTC time, so neither
+ * "gaps move forward" nor "overlaps pick the later occurrence" holds in
+ * general. Measured cases:
+ * - spring-forward gap maps *backward* (before the gap) for Europe/Warsaw
+ *   2026-03-29 02:30 and Australia/Lord_Howe 2026-10-04 02:15, but *forward*
+ *   (after the gap) for America/New_York 2026-03-08 02:30 and America/Havana
+ *   2026-03-08 00:30;
+ * - fall-back overlap picks the *later* (post-transition) occurrence for
+ *   Europe/Warsaw 2026-10-25 02:30, but the *earlier* one for America/New_York
+ *   2026-11-01 01:30.
+ *
+ * The guarantee callers can rely on is only this: the result is stable, host
+ * timezone independent, and for an existing wall clock it round-trips.
+ *
+ * Out-of-range components are normalized like `Date.UTC` does, so callers can
+ * do naive component arithmetic (`day + n`, `month + n`) and let this handle
+ * rollover.
+ */
+const zonedWallClockToInstant = (
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  ms: number,
+  timeZone: string,
+) => {
+  const target = utcInstantFromParts(
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    ms,
+  );
+  const firstGuess = target - zoneOffsetMsAt(target, timeZone);
+  const secondGuess = target - zoneOffsetMsAt(firstGuess, timeZone);
+  if (secondGuess === firstGuess) {
+    return firstGuess;
+  }
+  return target - zoneOffsetMsAt(secondGuess, timeZone);
+};
+
+const utcDaysInMonth = (year: number, month: number) =>
+  new Date(utcInstantFromParts(year, month + 1, 0)).getUTCDate();
+
+const zonedWallClock = (
+  timeZone: string,
+  year: number,
+  month: number,
+  day: number,
+  hour = 0,
+  minute = 0,
+  second = 0,
+  ms = 0,
+) =>
+  new Date(
+    zonedWallClockToInstant(
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second,
+      ms,
+      timeZone,
+    ),
+  );
+
+/**
+ * Start of `date`'s day in `timeZone`. Tolerates unparseable input the way
+ * date-fns did — an invalid date in, an invalid date out — because this is the
+ * boundary that normalizes caller-supplied start dates before validation.
+ */
+const zonedStartOfDayIn = (date: Date, timeZone: string) => {
+  const instant = new Date(date).getTime();
+  if (Number.isNaN(instant)) {
+    return new Date(Number.NaN);
+  }
+  const { year, month, day } = zonedParts(instant, timeZone);
+  return zonedWallClock(timeZone, year, month, day);
+};
+
+/**
+ * Reject a public `Date` parameter that is not a `Date`.
+ *
+ * The internals compare instants by calling `.getTime()` directly, which is
+ * what makes them provably host-timezone independent, but it also means a
+ * non-Date argument surfaces as a bare `TypeError` from deep inside. A
+ * plain-JS caller (for whom the `Date` type annotation is not enforced) gets a
+ * coded error here instead.
+ *
+ * Strings are rejected, never coerced: `new Date('2026-01-15T00:00:00')` is
+ * parsed in the HOST timezone, which is precisely the hazard a rule-timezone
+ * engine must not reintroduce. Callers must construct the `Date` themselves so
+ * the intended instant is unambiguous.
+ *
+ * An Invalid Date passes this guard on purpose — it is a `Date`, and the
+ * documented behaviour for one is to degrade to an empty result rather than
+ * throw.
+ */
+const assertDateArgument = (
+  value: unknown,
+  option: string,
+  operation: string,
+  code: QuickurrenceErrorCode = QuickurrenceErrorCode.INVALID_DATE_RANGE,
+) => {
+  if (value instanceof Date) {
+    return;
+  }
+  throw QuickurrenceError.validation(
+    `${option} must be a Date object`,
+    code,
+    {
+      option,
+      value,
+      expected: 'Date object (strings are not coerced: build the Date yourself)',
+      operation,
+    },
+  );
+};
+
+const assertDateRangeArgument = (range: DateRange, operation: string) => {
+  if (range === null || typeof range !== 'object') {
+    throw QuickurrenceError.validation(
+      'range must be an object with Date start and end properties',
+      QuickurrenceErrorCode.INVALID_DATE_RANGE,
+      {
+        option: 'range',
+        value: range,
+        expected: '{ start: Date, end: Date }',
+        operation,
+      },
+    );
+  }
+  assertDateArgument(range.start, 'range.start', operation);
+  assertDateArgument(range.end, 'range.end', operation);
+};
+
 export class Quickurrence {
   private startDate: Date;
   private rule: RecurrenceRule;
@@ -160,7 +490,6 @@ export class Quickurrence {
   private preset?: Preset;
   private timesOfDay?: string[];
   private options: QuickurrenceOptions;
-  private readonly tzContext: ReturnType<typeof tz>;
   private excludeDateTimes?: Set<number>;
   private parsedTimesOfDay?: { hh: number; mm: number }[];
 
@@ -191,48 +520,74 @@ export class Quickurrence {
 
     const cleanedOptions = Quickurrence.clean(newOptions);
 
-    const timezone = cleanedOptions.timezone ?? 'UTC';
-    const defaultStartDate =
-      cleanedOptions.startDate || new TZDate(new Date(), timezone);
-    const updatedStartDate = startOfDay(defaultStartDate, { in: tz(timezone) });
+    // `||`, not `??`: an empty timezone string must fall back to UTC exactly as
+    // the constructor does, otherwise update() rejects an input the constructor
+    // accepts and the two entry points disagree.
+    const timezone = cleanedOptions.timezone || 'UTC';
+    // Same reason as in the constructor: normalization runs before the schema
+    // and would coerce a string into a valid Date, hiding a host-timezone parse.
+    if (cleanedOptions.startDate !== undefined) {
+      assertDateArgument(
+        cleanedOptions.startDate,
+        'startDate',
+        'update',
+        QuickurrenceErrorCode.INVALID_START_DATE,
+      );
+    }
+    const defaultStartDate = cleanedOptions.startDate || new Date();
+    const updatedStartDate = zonedStartOfDayIn(defaultStartDate, timezone);
     const options: QuickurrenceOptions = {
       startDate: updatedStartDate,
       rule: cleanedOptions.rule,
       timezone,
     };
 
-    if (cleanedOptions.interval !== undefined && cleanedOptions.interval > 1) {
+    // Every option is copied on presence alone. Keeping the output minimal is
+    // `clean()`'s job — it has already dropped defaults (interval 1), empty
+    // arrays and rule-incompatible fields above — so a value that survives
+    // `clean()` is one the caller meant to set and must round-trip. Filtering
+    // again on the value here is what silently swallowed legal inputs, and it
+    // also hid illegal ones (interval 0, count 0) from the schema below.
+    if (cleanedOptions.interval !== undefined) {
       options.interval = cleanedOptions.interval;
     }
 
-    if (cleanedOptions.endDate) {
+    if (cleanedOptions.endDate !== undefined) {
       options.endDate = cleanedOptions.endDate;
     }
 
-    if (cleanedOptions.count !== undefined && cleanedOptions.count > 0) {
+    if (cleanedOptions.count !== undefined) {
       options.count = cleanedOptions.count;
     }
 
-    if (cleanedOptions.weekDays && cleanedOptions.weekDays.length > 0) {
+    if (cleanedOptions.weekStartsOn !== undefined) {
+      options.weekStartsOn = cleanedOptions.weekStartsOn;
+    }
+
+    if (cleanedOptions.weekDays !== undefined) {
       options.weekDays = cleanedOptions.weekDays;
     }
 
     if (cleanedOptions.monthDay !== undefined) {
       options.monthDay = cleanedOptions.monthDay;
-      if (cleanedOptions.monthDayMode) {
-        options.monthDayMode = cleanedOptions.monthDayMode;
-      }
     }
 
-    if (cleanedOptions.nthWeekdayOfMonth) {
+    // Independent of monthDay: `{rule: 'monthly', monthDayMode: 'skip'}` is
+    // accepted by the constructor, so update() must not drop the mode just
+    // because no monthDay accompanies it.
+    if (cleanedOptions.monthDayMode !== undefined) {
+      options.monthDayMode = cleanedOptions.monthDayMode;
+    }
+
+    if (cleanedOptions.nthWeekdayOfMonth !== undefined) {
       options.nthWeekdayOfMonth = cleanedOptions.nthWeekdayOfMonth;
     }
 
-    if (cleanedOptions.excludeDates && cleanedOptions.excludeDates.length > 0) {
+    if (cleanedOptions.excludeDates !== undefined) {
       options.excludeDates = cleanedOptions.excludeDates;
     }
 
-    if (cleanedOptions.preset) {
+    if (cleanedOptions.preset !== undefined) {
       options.preset = cleanedOptions.preset;
     }
 
@@ -240,18 +595,24 @@ export class Quickurrence {
       options.condition = cleanedOptions.condition;
     }
 
-    if (cleanedOptions.timesOfDay && cleanedOptions.timesOfDay.length > 0) {
+    if (cleanedOptions.timesOfDay !== undefined) {
       options.timesOfDay = [...cleanedOptions.timesOfDay];
     }
 
     const validationResult = QuickurrenceOptionsSchema.safeParse(options);
     if (!validationResult.success) {
-      console.error(
-        'Invalid QuickurrenceOptions created:',
-        validationResult.error,
-      );
-      throw new Error(
+      const issues = validationResult.error.issues;
+      const option = String(issues[0]?.path[0] ?? '');
+      throw QuickurrenceError.validation(
         `Invalid quickurrence options: ${validationResult.error.message}`,
+        _optionErrorCodes[option as keyof typeof _optionErrorCodes] ??
+          QuickurrenceErrorCode.UNKNOWN,
+        {
+          operation: 'update',
+          option: option || undefined,
+          value: option ? options[option as keyof QuickurrenceOptions] : options,
+          details: { issues },
+        },
       );
     }
 
@@ -272,12 +633,27 @@ export class Quickurrence {
     }
 
     const timezone = baseOptions.timezone || 'UTC';
-    const defaultStartDate =
-      baseOptions.startDate || new TZDate(new Date(), timezone);
+    // Resolve the zone before it is used to build a date. Without this, an
+    // unknown zone first surfaces as a NaN instant while normalizing the start
+    // date, and the caller is told the startDate is invalid instead of the
+    // timezone.
+    formatterFor(timezone);
+    // Checked before normalization, not by the validator afterwards: a string
+    // start date would otherwise be coerced by the normalizer into a real Date
+    // and pass validation, having been parsed in the host timezone.
+    if (baseOptions.startDate !== undefined) {
+      assertDateArgument(
+        baseOptions.startDate,
+        'startDate',
+        'constructor',
+        QuickurrenceErrorCode.INVALID_START_DATE,
+      );
+    }
+    const defaultStartDate = baseOptions.startDate || new Date();
     const defaultRule = baseOptions.rule || 'daily';
     const optionsWithDefaults = {
       ...baseOptions,
-      startDate: startOfDay(defaultStartDate, { in: tz(timezone) }),
+      startDate: zonedStartOfDayIn(defaultStartDate, timezone),
       rule: defaultRule,
       timezone,
     };
@@ -325,7 +701,6 @@ export class Quickurrence {
     this.startDate = startDate;
     this.rule = rule;
     this.timezone = timezone;
-    this.tzContext = tz(timezone);
     this.interval = interval;
     this.count = count;
     this.weekStartsOn = weekStartsOn;
@@ -346,9 +721,7 @@ export class Quickurrence {
       : undefined;
     this.excludeDates = excludeDates
       ? excludeDates.map((date) =>
-          this.timesOfDay
-            ? new Date(date)
-            : startOfDay(date, { in: this.tzContext }),
+          this.timesOfDay ? new Date(date) : this.zonedStartOfDay(date),
         )
       : undefined;
     this.excludeDateTimes = this.excludeDates
@@ -357,18 +730,29 @@ export class Quickurrence {
     this.preset = preset;
     this.condition = condition;
 
-    // Normalize end date to start of day if provided (preserve exact time when timesOfDay is set)
+    // Day-level rules match days, so the end date collapses to its day. With
+    // timesOfDay the rule matches instants, so the exact time is kept and acts
+    // as a hard cutoff inside its own day: an endDate at midnight ends the rule
+    // before that day's slots. Callers wanting the whole final day pass an
+    // end-of-day time.
     if (endDate) {
       this.endDate = this.timesOfDay
         ? new Date(endDate)
-        : startOfDay(endDate, { in: this.tzContext });
+        : this.zonedStartOfDay(endDate);
     }
   }
 
   /**
-   * Get the next occurrence after the given date
+   * Get the next occurrence strictly after the given date.
+   *
+   * `endDate` is compared the same way {@link getAllOccurrences} compares it:
+   * by day for day-level rules, exactly for `timesOfDay` rules. So a
+   * `timesOfDay` rule whose `endDate` sits at midnight is exhausted at the end
+   * of the previous day and throws `END_DATE_EXCEEDED` here — to keep that
+   * final day's slots, give `endDate` an end-of-day time.
    */
   getNextOccurrence(after: Date = new Date()): Date {
+    assertDateArgument(after, 'after', 'getNextOccurrence');
     if (this.timesOfDay) {
       return this.getNextOccurrenceWithTimes(after);
     }
@@ -391,12 +775,12 @@ export class Quickurrence {
       return this.getNextMonthlyOccurrenceWithNthWeekday(after);
     }
 
-    const afterNormalized = startOfDay(after, { in: this.tzContext });
+    const afterNormalized = this.zonedStartOfDay(after);
 
     if (this.count !== undefined) {
       const allOccurrences = this.getAllOccurrences({
         start: this.startDate,
-        end: addYears(afterNormalized, 10, { in: this.tzContext }), // Look ahead enough to find all count occurrences
+        end: this.zonedAddYears(afterNormalized, 10), // Look ahead enough to find all count occurrences
       });
 
       for (const occurrence of allOccurrences) {
@@ -455,7 +839,7 @@ export class Quickurrence {
           QuickurrenceErrorCode.END_DATE_EXCEEDED,
           {
             operation: 'getNextOccurrence',
-            details: { endDate: this.endDate, currentDate: current },
+            details: { endDate: new Date(this.endDate), currentDate: current },
           },
         );
       }
@@ -467,7 +851,7 @@ export class Quickurrence {
         QuickurrenceErrorCode.END_DATE_EXCEEDED,
         {
           operation: 'getNextOccurrence',
-          details: { endDate: this.endDate, currentDate: current },
+          details: { endDate: new Date(this.endDate), currentDate: current },
         },
       );
     }
@@ -476,9 +860,32 @@ export class Quickurrence {
   }
 
   /**
-   * Get all occurrences within the given date range
+   * Get all occurrences within the given date range.
+   *
+   * Both ends of the range are inclusive, but they are compared at different
+   * granularities depending on whether the rule expands into times of day:
+   *
+   * - Without `timesOfDay` the rule matches days, so both ends are compared by
+   *   day: the whole day of `range.start` and the whole day of `range.end` are
+   *   in range, and each returned date is that day's marker at 00:00 in the
+   *   rule timezone.
+   * - With `timesOfDay` the rule matches instants, so both ends are compared
+   *   exactly: slots before `range.start` or after `range.end` are dropped,
+   *   including slots that sit on an in-range day.
+   *
+   * That means the two forms can return different sets of days for the same
+   * range — a day-level rule reports the day itself, a `timesOfDay` rule
+   * reports only the slots that actually fall inside the window. Adding
+   * `timesOfDay` to a rule and passing a `range.end` at midnight therefore
+   * yields nothing for that final day, because every slot is after 00:00.
+   *
+   * `endDate` follows the same split: see the constructor and
+   * {@link getNextOccurrence}.
+   *
+   * Results are capped at {@link MAX_NEXT_OCCURENCES} as a safety limit.
    */
   getAllOccurrences(range: DateRange): Date[] {
+    assertDateRangeArgument(range, 'getAllOccurrences');
     if (this.timesOfDay) {
       return this.getAllOccurrencesWithTimes(range);
     }
@@ -503,8 +910,8 @@ export class Quickurrence {
     }
 
     const occurrences: Date[] = [];
-    const startNormalized = startOfDay(range.start, { in: this.tzContext });
-    const rangeEndNormalized = startOfDay(range.end, { in: this.tzContext });
+    const startNormalized = this.zonedStartOfDay(range.start);
+    const rangeEndNormalized = this.zonedStartOfDay(range.end);
 
     // Use the earliest end date: either the range end or the rule's end date
     const effectiveEndDate =
@@ -542,7 +949,7 @@ export class Quickurrence {
       // Safety check to prevent infinite loops
       iterations++;
       if (
-        occurrences.length > MAX_NEXT_OCCURENCES ||
+        occurrences.length >= MAX_NEXT_OCCURENCES ||
         iterations > MAX_COLLECTION_ITERATIONS
       ) {
         break;
@@ -564,7 +971,7 @@ export class Quickurrence {
     // When timesOfDay is set, exclusions match exact datetime; otherwise match day.
     const target = this.timesOfDay
       ? date
-      : startOfDay(date, { in: this.tzContext });
+      : this.zonedStartOfDay(date);
     return this.excludeDateTimes.has(target.getTime());
   }
 
@@ -576,15 +983,9 @@ export class Quickurrence {
     if (!this.parsedTimesOfDay || this.parsedTimesOfDay.length === 0) {
       return [day];
     }
-    const dayStart = startOfDay(day, { in: this.tzContext });
-    const opts = { in: this.tzContext } as const;
-    return this.parsedTimesOfDay.map(({ hh, mm }) => {
-      let d = setHours(dayStart, hh, opts);
-      d = setMinutes(d, mm, opts);
-      d = setSeconds(d, 0, opts);
-      d = setMilliseconds(d, 0, opts);
-      return d;
-    });
+    return this.parsedTimesOfDay.map(({ hh, mm }) =>
+      this.zonedSetTime(day, hh, mm),
+    );
   }
 
   /**
@@ -593,11 +994,13 @@ export class Quickurrence {
    */
   private getAllOccurrencesWithTimes(range: DateRange): Date[] {
     const dayRange: DateRange = {
-      start: startOfDay(range.start, { in: this.tzContext }),
-      end: startOfDay(range.end, { in: this.tzContext }),
+      start: this.zonedStartOfDay(range.start),
+      end: this.zonedStartOfDay(range.end),
     };
     const days = this.collectDayOccurrences(dayRange);
     let datetimes = days.flatMap((d) => this.expandDayWithTimes(d));
+    // Day collection widens the range to whole days, so the expanded slots are
+    // re-checked against the caller's exact instants on purpose.
     datetimes = datetimes.filter(
       (d) =>
         !isBefore(d, range.start) &&
@@ -615,7 +1018,14 @@ export class Quickurrence {
         dedup.push(d);
       }
     }
-    return this.count !== undefined ? dedup.slice(0, this.count) : dedup;
+    // Day collection is capped at MAX_NEXT_OCCURENCES days, and each day fans
+    // out into one slot per timesOfDay entry, so the cap is re-applied to the
+    // expanded list — it bounds returned occurrences, not candidate days.
+    const limit =
+      this.count === undefined
+        ? MAX_NEXT_OCCURENCES
+        : Math.min(this.count, MAX_NEXT_OCCURENCES);
+    return dedup.slice(0, limit);
   }
 
   /**
@@ -628,7 +1038,7 @@ export class Quickurrence {
       return this.getNextOccurrenceWithTimesWindowed(after);
     }
 
-    const afterDay = startOfDay(after, { in: this.tzContext });
+    const afterDay = this.zonedStartOfDay(after);
     let day = this.getNextOccurrenceByDay(new Date(afterDay.getTime() - 1));
 
     let attempts = 0;
@@ -675,7 +1085,7 @@ export class Quickurrence {
       : this.startDate;
     const range: DateRange = {
       start: this.startDate,
-      end: addYears(windowStartReference, 10, { in: this.tzContext }),
+      end: this.zonedAddYears(windowStartReference, 10),
     };
     const all = this.getAllOccurrencesWithTimes(range);
     for (const occ of all) {
@@ -702,9 +1112,11 @@ export class Quickurrence {
       return this.condition;
     }
 
-    // Normalize the date to start of day in the specified timezone before passing to condition function
-    const normalizedDate = startOfDay(date, { in: this.tzContext });
-    return this.condition(normalizedDate);
+    // The predicate sees the day's exact start instant in the rule timezone,
+    // plus that instant's rule-zone fields — a plain Date's own accessors would
+    // report the host timezone and could name a different day.
+    const normalizedDate = this.zonedStartOfDay(date);
+    return this.condition(normalizedDate, this.zonedPartsOf(normalizedDate));
   }
 
   /**
@@ -759,7 +1171,7 @@ export class Quickurrence {
       : undefined;
   }
 
-  getCondition(): boolean | ((date: Date) => boolean) | undefined {
+  getCondition(): Condition | undefined {
     return this.condition;
   }
 
@@ -799,7 +1211,20 @@ export class Quickurrence {
           weekDays: [0, 6] as WeekDay[], // Sunday and Saturday
         };
       default:
-        throw new Error(`Unknown preset: ${preset}`);
+        // Unreachable for a well-typed caller, but plain-JS callers reach it —
+        // and this runs before any validation, so it is the only place the bad
+        // preset is seen. It must be as actionable as the validator's own
+        // UNSUPPORTED_PRESET rejection.
+        throw QuickurrenceError.configuration(
+          `Unsupported preset: ${String(preset)}`,
+          QuickurrenceErrorCode.UNSUPPORTED_PRESET,
+          {
+            option: 'preset',
+            value: preset,
+            expected: `One of: ${presetOptions.join(', ')}`,
+            operation: 'presetToOptions',
+          },
+        );
     }
   }
 
@@ -893,12 +1318,11 @@ export class Quickurrence {
    */
   private advanceGrid(k: number): Date {
     const steps = k * this.interval;
-    const opts = { in: this.tzContext } as const;
     switch (this.rule) {
       case 'weekly':
-        return startOfDay(addWeeks(this.startDate, steps, opts), opts);
+        return this.zonedStartOfDay(this.zonedAddWeeks(this.startDate, steps));
       default:
-        return startOfDay(addDays(this.startDate, steps, opts), opts);
+        return this.zonedStartOfDay(this.zonedAddDays(this.startDate, steps));
     }
   }
 
@@ -955,15 +1379,123 @@ export class Quickurrence {
     }
 
     // Normalize to start of day in the specified timezone
-    return startOfDay(nextDate, { in: this.tzContext });
+    return this.zonedStartOfDay(nextDate);
   }
 
   private getNextDaily(current: Date): Date {
-    return addDays(current, this.interval, { in: this.tzContext });
+    return this.zonedAddDays(current, this.interval);
   }
 
   private getDay(date: Date): Day {
-    return getDay(date, { in: this.tzContext }) as Day;
+    return this.zonedPartsOf(date).weekday as Day;
+  }
+
+  /**
+   * Build the instant matching a wall clock in the rule timezone. The result is
+   * a plain `Date`, so only its epoch carries meaning: its own accessors report
+   * the host timezone, and rule-zone fields must come from
+   * {@link Quickurrence.zonedPartsOf}.
+   */
+  private wallClock(
+    year: number,
+    month: number,
+    day: number,
+    hour = 0,
+    minute = 0,
+    second = 0,
+    ms = 0,
+  ): Date {
+    return zonedWallClock(
+      this.timezone,
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second,
+      ms,
+    );
+  }
+
+  private zonedPartsOf(date: Date) {
+    return zonedParts(date.getTime(), this.timezone);
+  }
+
+  private zonedDayStart(year: number, month: number, day: number): Date {
+    return this.wallClock(year, month, day);
+  }
+
+  private zonedStartOfDay(date: Date): Date {
+    const { year, month, day } = this.zonedPartsOf(date);
+    return this.wallClock(year, month, day);
+  }
+
+  private zonedSetTime(date: Date, hour: number, minute: number): Date {
+    const { year, month, day } = this.zonedPartsOf(date);
+    return this.wallClock(year, month, day, hour, minute, 0, 0);
+  }
+
+  private zonedAddDays(date: Date, amount: number): Date {
+    const { year, month, day, hour, minute, second, ms } =
+      this.zonedPartsOf(date);
+    return this.wallClock(year, month, day + amount, hour, minute, second, ms);
+  }
+
+  private zonedAddWeeks(date: Date, amount: number): Date {
+    return this.zonedAddDays(date, amount * 7);
+  }
+
+  private zonedAddMonths(date: Date, amount: number): Date {
+    const { year, month, day, hour, minute, second, ms } =
+      this.zonedPartsOf(date);
+    const total = month + amount;
+    const targetYear = year + Math.floor(total / 12);
+    const targetMonth = ((total % 12) + 12) % 12;
+    // Month arithmetic clamps rather than rolls over: Jan 31 + 1 month is Feb 28.
+    const targetDay = Math.min(day, utcDaysInMonth(targetYear, targetMonth));
+    return this.wallClock(
+      targetYear,
+      targetMonth,
+      targetDay,
+      hour,
+      minute,
+      second,
+      ms,
+    );
+  }
+
+  private zonedAddYears(date: Date, amount: number): Date {
+    return this.zonedAddMonths(date, amount * 12);
+  }
+
+  private zonedLastDayOfMonth(date: Date): Date {
+    const { year, month, hour, minute, second, ms } = this.zonedPartsOf(date);
+    return this.wallClock(
+      year,
+      month,
+      utcDaysInMonth(year, month),
+      hour,
+      minute,
+      second,
+      ms,
+    );
+  }
+
+  private zonedDaysInMonth(date: Date): number {
+    const { year, month } = this.zonedPartsOf(date);
+    return utcDaysInMonth(year, month);
+  }
+
+  private zonedStartOfWeek(date: Date): Date {
+    const { year, month, day, weekday } = this.zonedPartsOf(date);
+    const back = (weekday - this.weekStartsOn + 7) % 7;
+    return this.wallClock(year, month, day - back);
+  }
+
+  private zonedNextDay(date: Date, target: Day): Date {
+    const { year, month, day, weekday } = this.zonedPartsOf(date);
+    const forward = ((target - weekday + 7) % 7) || 7;
+    return this.wallClock(year, month, day + forward);
   }
 
   private static areArraysEqual<T>(array1: T[], array2: T[]): boolean {
@@ -975,7 +1507,7 @@ export class Quickurrence {
 
   private getNextWeekly(current: Date): Date {
     if (!this.weekDays) {
-      return addWeeks(current, this.interval, { in: this.tzContext });
+      return this.zonedAddWeeks(current, this.interval);
     }
 
     const currentWeekday = this.getDay(current);
@@ -989,14 +1521,12 @@ export class Quickurrence {
       const nextWeekday = this.weekDays[currentWeekdayIndex + 1];
       QuickurrenceValidator.validateWeekdayValue(nextWeekday);
       return this.getNextWeekdayOccurrence(
-        addDays(current, 1, { in: this.tzContext }),
+        this.zonedAddDays(current, 1),
         nextWeekday,
       );
     }
 
-    const nextWeekStart = addWeeks(current, this.interval, {
-      in: this.tzContext,
-    });
+    const nextWeekStart = this.zonedAddWeeks(current, this.interval);
     const firstWeekday = this.weekDays[0];
     QuickurrenceValidator.validateWeekdayValue(firstWeekday);
     return this.getNextWeekdayOccurrence(nextWeekStart, firstWeekday);
@@ -1009,81 +1539,51 @@ export class Quickurrence {
     if (this.nthWeekdayOfMonth) {
       return this.getNextMonthlyWithNthWeekday(current);
     }
-    return addMonths(current, this.interval, { in: this.tzContext });
+    return this.zonedAddMonths(current, this.interval);
   }
 
   private getNextYearly(current: Date): Date {
-    return addYears(current, this.interval, { in: this.tzContext });
+    return this.zonedAddYears(current, this.interval);
   }
 
   private getNextMonthlyWithSpecificDay(current: Date): Date {
     const targetDay = this.monthDay!; // Direct use of 1-31
-    const currentMonth = new Date(current);
-    const normalizedCurrent = startOfDay(current, { in: this.tzContext });
+    const { year, month } = this.zonedPartsOf(current);
+    const normalizedCurrent = this.zonedStartOfDay(current);
 
-    let normalizedTargetThisMonth: Date;
-    if (this.timezone === 'UTC') {
-      normalizedTargetThisMonth = new Date(
-        Date.UTC(
-          currentMonth.getFullYear(),
-          currentMonth.getMonth(),
-          targetDay,
-        ),
-      );
-    } else {
-      const targetDateThisMonth = new Date(
-        currentMonth.getFullYear(),
-        currentMonth.getMonth(),
-        targetDay,
-      );
-      normalizedTargetThisMonth = startOfDay(targetDateThisMonth, {
-        in: this.tzContext,
-      });
-    }
+    const normalizedTargetThisMonth = this.zonedDayStart(
+      year,
+      month,
+      targetDay,
+    );
 
     // If the target day exists in the current month and is STRICTLY after the current date, use it
     if (
-      targetDay <= getDaysInMonth(currentMonth, { in: this.tzContext }) &&
+      targetDay <= this.zonedDaysInMonth(current) &&
       isAfter(normalizedTargetThisMonth, normalizedCurrent)
     ) {
       return normalizedTargetThisMonth;
     }
 
     // Otherwise, find next month with target day (always move forward)
-    let nextMonth = addMonths(currentMonth, this.interval, {
-      in: this.tzContext,
-    });
+    let nextMonth = this.zonedAddMonths(current, this.interval);
     let attempts = 0;
     const maxAttempts = 12; // Prevent infinite loops
 
     while (attempts < maxAttempts) {
-      const daysInTargetMonth = getDaysInMonth(nextMonth, {
-        in: this.tzContext,
-      });
+      const daysInTargetMonth = this.zonedDaysInMonth(nextMonth);
 
       if (targetDay <= daysInTargetMonth) {
-        if (this.timezone === 'UTC') {
-          return new Date(
-            Date.UTC(nextMonth.getFullYear(), nextMonth.getMonth(), targetDay),
-          );
-        } else {
-          const targetDate = new Date(
-            nextMonth.getFullYear(),
-            nextMonth.getMonth(),
-            targetDay,
-          );
-          return startOfDay(targetDate, { in: this.tzContext });
-        }
+        const nextParts = this.zonedPartsOf(nextMonth);
+        return this.zonedDayStart(nextParts.year, nextParts.month, targetDay);
       }
 
       if (this.monthDayMode === 'last') {
-        const lastDay = lastDayOfMonth(nextMonth, { in: this.tzContext });
-        return startOfDay(lastDay, { in: this.tzContext });
+        const lastDay = this.zonedLastDayOfMonth(nextMonth);
+        return this.zonedStartOfDay(lastDay);
       }
 
-      nextMonth = addMonths(nextMonth, this.interval, {
-        in: this.tzContext,
-      });
+      nextMonth = this.zonedAddMonths(nextMonth, this.interval);
       attempts++;
     }
 
@@ -1114,8 +1614,8 @@ export class Quickurrence {
     }
 
     const occurrences: Date[] = [];
-    const startNormalized = startOfDay(range.start, { in: this.tzContext });
-    const rangeEndNormalized = startOfDay(range.end, { in: this.tzContext });
+    const startNormalized = this.zonedStartOfDay(range.start);
+    const rangeEndNormalized = this.zonedStartOfDay(range.end);
 
     // Use the earliest end date: either the range end or the rule's end date
     const effectiveEndDate =
@@ -1124,7 +1624,7 @@ export class Quickurrence {
         : rangeEndNormalized;
 
     let monthCounter = 0;
-    let currentMonthStart = new Date(this.startDate);
+    let currentMonthStart: Date = this.startDate;
 
     while (currentMonthStart <= effectiveEndDate) {
       const monthOccurrence = this.getMonthDayOccurrence(currentMonthStart);
@@ -1153,14 +1653,10 @@ export class Quickurrence {
       }
 
       monthCounter++;
-      currentMonthStart = addMonths(
-        this.startDate,
-        monthCounter * this.interval,
-        { in: this.tzContext },
-      );
+      currentMonthStart = this.zonedAddMonths(this.startDate, monthCounter * this.interval);
 
       // Safety check to prevent infinite loops
-      if (occurrences.length > MAX_NEXT_OCCURENCES || monthCounter > 120) {
+      if (occurrences.length >= MAX_NEXT_OCCURENCES || monthCounter > 120) {
         break;
       }
     }
@@ -1173,27 +1669,15 @@ export class Quickurrence {
    */
   private getMonthDayOccurrence(monthDate: Date): Date | null {
     const targetDay = this.monthDay!; // Direct use of 1-31
-    const daysInMonth = getDaysInMonth(monthDate, { in: this.tzContext });
+    const { year, month } = this.zonedPartsOf(monthDate);
+    const daysInMonth = utcDaysInMonth(year, month);
 
     if (targetDay <= daysInMonth) {
-      // Create date in the same timezone as the input monthDate
-      if (this.timezone === 'UTC') {
-        return new Date(
-          Date.UTC(monthDate.getFullYear(), monthDate.getMonth(), targetDay),
-        );
-      } else {
-        const targetDate = new Date(
-          monthDate.getFullYear(),
-          monthDate.getMonth(),
-          targetDay,
-        );
-        return startOfDay(targetDate, { in: this.tzContext });
-      }
+      return this.wallClock(year, month, targetDay);
     }
 
     if (this.monthDayMode === 'last') {
-      const lastDay = lastDayOfMonth(monthDate, { in: this.tzContext });
-      return startOfDay(lastDay, { in: this.tzContext });
+      return this.zonedStartOfDay(this.zonedLastDayOfMonth(monthDate));
     }
 
     return null;
@@ -1212,13 +1696,13 @@ export class Quickurrence {
       );
     }
 
-    const afterNormalized = startOfDay(after, { in: this.tzContext });
+    const afterNormalized = this.zonedStartOfDay(after);
 
     if (this.count !== undefined) {
       const allOccurrences = this.getAllMonthlyOccurrencesWithSpecificDay(
         {
           start: this.startDate,
-          end: addMonths(afterNormalized, 200, { in: this.tzContext }), // Look ahead enough to find all count occurrences
+          end: this.zonedAddMonths(afterNormalized, 200), // Look ahead enough to find all count occurrences
         },
         afterNormalized,
       );
@@ -1251,7 +1735,7 @@ export class Quickurrence {
 
     const range = {
       start: afterNormalized,
-      end: addMonths(afterNormalized, 100, { in: this.tzContext }), // Look ahead 100 months to find next occurrence
+      end: this.zonedAddMonths(afterNormalized, 100), // Look ahead 100 months to find next occurrence
     };
 
     const allOccurrences = this.getAllMonthlyOccurrencesWithSpecificDay(
@@ -1285,7 +1769,7 @@ export class Quickurrence {
       return date;
     }
 
-    return nextDay(date, targetWeekday, { in: this.tzContext });
+    return this.zonedNextDay(date, targetWeekday);
   }
 
   /**
@@ -1303,10 +1787,8 @@ export class Quickurrence {
         daysToAdd += 7;
       }
 
-      const targetDate = addDays(weekStartDate, daysToAdd, {
-        in: this.tzContext,
-      });
-      occurrences.push(startOfDay(targetDate, { in: this.tzContext }));
+      const targetDate = this.zonedAddDays(weekStartDate, daysToAdd);
+      occurrences.push(this.zonedStartOfDay(targetDate));
     }
 
     return occurrences.sort((a, b) => a.getTime() - b.getTime());
@@ -1329,8 +1811,8 @@ export class Quickurrence {
     }
 
     const occurrences: Date[] = [];
-    const startNormalized = startOfDay(range.start, { in: this.tzContext });
-    const rangeEndNormalized = startOfDay(range.end, { in: this.tzContext });
+    const startNormalized = this.zonedStartOfDay(range.start);
+    const rangeEndNormalized = this.zonedStartOfDay(range.end);
 
     // Use the earliest end date: either the range end or the rule's end date
     const effectiveEndDate =
@@ -1339,10 +1821,7 @@ export class Quickurrence {
         : rangeEndNormalized;
 
     // Start from the aligned week that contains the rule's start date
-    const baseWeekStart = startOfWeek(this.startDate, {
-      weekStartsOn: this.weekStartsOn,
-      in: this.tzContext,
-    });
+    const baseWeekStart = this.zonedStartOfWeek(this.startDate);
     let weekCounter = 0;
     let currentWeekStart = baseWeekStart;
 
@@ -1372,6 +1851,12 @@ export class Quickurrence {
           if (this.count && occurrences.length >= this.count) {
             break;
           }
+
+          // A week contributes up to one occurrence per weekday, so the cap has
+          // to hold inside the week too, not only between weeks.
+          if (occurrences.length >= MAX_NEXT_OCCURENCES) {
+            break;
+          }
         }
       }
 
@@ -1389,12 +1874,10 @@ export class Quickurrence {
       }
 
       weekCounter++;
-      currentWeekStart = addWeeks(baseWeekStart, weekCounter * this.interval, {
-        in: this.tzContext,
-      });
+      currentWeekStart = this.zonedAddWeeks(baseWeekStart, weekCounter * this.interval);
 
       // Safety check to prevent infinite loops
-      if (occurrences.length > MAX_NEXT_OCCURENCES) {
+      if (occurrences.length >= MAX_NEXT_OCCURENCES) {
         break;
       }
     }
@@ -1415,12 +1898,12 @@ export class Quickurrence {
       );
     }
 
-    const afterNormalized = startOfDay(after, { in: this.tzContext });
+    const afterNormalized = this.zonedStartOfDay(after);
     if (this.count !== undefined) {
       const allOccurrences = this.getAllWeeklyOccurrencesWithWeekDays(
         {
           start: this.startDate,
-          end: addWeeks(afterNormalized, 200, { in: this.tzContext }), // Look ahead enough to find all count occurrences
+          end: this.zonedAddWeeks(afterNormalized, 200), // Look ahead enough to find all count occurrences
         },
         afterNormalized,
       );
@@ -1448,7 +1931,7 @@ export class Quickurrence {
     }
     const range = {
       start: afterNormalized,
-      end: addWeeks(afterNormalized, 100, { in: this.tzContext }), // Look ahead 100 weeks to find next occurrence
+      end: this.zonedAddWeeks(afterNormalized, 100), // Look ahead 100 weeks to find next occurrence
     };
     const allOccurrences = this.getAllWeeklyOccurrencesWithWeekDays(
       range,
@@ -1475,29 +1958,27 @@ export class Quickurrence {
     weekday: WeekDay,
     nth: NthWeekdayOfMonth,
   ): Date | null {
-    const year = monthDate.getFullYear();
-    const month = monthDate.getMonth();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const buildDate = (day: number) =>
-      this.timezone === 'UTC'
-        ? new Date(Date.UTC(year, month, day))
-        : new Date(year, month, day);
+    // A Date's own getFullYear/getMonth report the host timezone; the month this
+    // walks must be the one the rule timezone is in.
+    const { year, month } = this.zonedPartsOf(monthDate);
+    const daysInMonth = this.zonedDaysInMonth(monthDate);
+    const dayInMonth = (day: number) => this.zonedDayStart(year, month, day);
 
     // Handle 'last' case: step back from the last matching weekday of the month
     if (nth === 'last') {
-      const lastWeekday = this.getDay(buildDate(daysInMonth));
+      const lastWeekday = this.getDay(dayInMonth(daysInMonth));
       const targetDay = daysInMonth - ((lastWeekday - weekday + 7) % 7);
-      return startOfDay(buildDate(targetDay), { in: this.tzContext });
+      return dayInMonth(targetDay);
     }
 
     // Handle 1st, 2nd, 3rd, 4th cases via arithmetic from the first day
-    const firstWeekday = this.getDay(buildDate(1));
+    const firstWeekday = this.getDay(dayInMonth(1));
     const firstOccurrenceDay = 1 + ((weekday - firstWeekday + 7) % 7);
     const targetDay = firstOccurrenceDay + 7 * (nth - 1);
     if (targetDay > daysInMonth) {
       return null; // nth occurrence doesn't exist in this month
     }
-    return startOfDay(buildDate(targetDay), { in: this.tzContext });
+    return dayInMonth(targetDay);
   }
 
   private getAllMonthlyOccurrencesWithNthWeekday(
@@ -1517,8 +1998,8 @@ export class Quickurrence {
     }
 
     const occurrences: Date[] = [];
-    const startNormalized = startOfDay(range.start, { in: this.tzContext });
-    const rangeEndNormalized = startOfDay(range.end, { in: this.tzContext });
+    const startNormalized = this.zonedStartOfDay(range.start);
+    const rangeEndNormalized = this.zonedStartOfDay(range.end);
 
     // Use the earliest end date: either the range end or the rule's end date
     const effectiveEndDate =
@@ -1527,7 +2008,7 @@ export class Quickurrence {
         : rangeEndNormalized;
 
     let monthCounter = 0;
-    let currentMonthStart = new Date(this.startDate);
+    let currentMonthStart: Date = this.startDate;
 
     while (currentMonthStart <= effectiveEndDate) {
       const monthOccurrence = this.getNthWeekdayInMonth(
@@ -1560,14 +2041,10 @@ export class Quickurrence {
       }
 
       monthCounter++;
-      currentMonthStart = addMonths(
-        this.startDate,
-        monthCounter * this.interval,
-        { in: this.tzContext },
-      );
+      currentMonthStart = this.zonedAddMonths(this.startDate, monthCounter * this.interval);
 
       // Safety check to prevent infinite loops
-      if (occurrences.length > MAX_NEXT_OCCURENCES || monthCounter > 120) {
+      if (occurrences.length >= MAX_NEXT_OCCURENCES || monthCounter > 120) {
         break;
       }
     }
@@ -1588,13 +2065,13 @@ export class Quickurrence {
       );
     }
 
-    const afterNormalized = startOfDay(after, { in: this.tzContext });
+    const afterNormalized = this.zonedStartOfDay(after);
 
     if (this.count !== undefined) {
       const allOccurrences = this.getAllMonthlyOccurrencesWithNthWeekday(
         {
           start: this.startDate,
-          end: addMonths(afterNormalized, 200, { in: this.tzContext }), // Look ahead enough to find all count occurrences
+          end: this.zonedAddMonths(afterNormalized, 200), // Look ahead enough to find all count occurrences
         },
         afterNormalized,
       );
@@ -1631,7 +2108,7 @@ export class Quickurrence {
 
     const range = {
       start: afterNormalized,
-      end: addMonths(afterNormalized, 100, { in: this.tzContext }), // Look ahead 100 months to find next occurrence
+      end: this.zonedAddMonths(afterNormalized, 100), // Look ahead 100 months to find next occurrence
     };
 
     const allOccurrences = this.getAllMonthlyOccurrencesWithNthWeekday(
@@ -1660,14 +2137,9 @@ export class Quickurrence {
    */
   private getNextMonthlyWithNthWeekday(current: Date): Date {
     const { weekday, nth } = this.nthWeekdayOfMonth!;
-    const currentMonth = new Date(current);
-    const normalizedCurrent = startOfDay(current, { in: this.tzContext });
+    const normalizedCurrent = this.zonedStartOfDay(current);
 
-    const targetThisMonth = this.getNthWeekdayInMonth(
-      currentMonth,
-      weekday,
-      nth,
-    );
+    const targetThisMonth = this.getNthWeekdayInMonth(current, weekday, nth);
 
     // If the target exists in the current month and is STRICTLY after the current date, use it
     if (targetThisMonth && isAfter(targetThisMonth, normalizedCurrent)) {
@@ -1675,9 +2147,7 @@ export class Quickurrence {
     }
 
     // Otherwise, find next month with nth weekday (always move forward)
-    let nextMonth = addMonths(currentMonth, this.interval, {
-      in: this.tzContext,
-    });
+    let nextMonth = this.zonedAddMonths(current, this.interval);
     let attempts = 0;
     const maxAttempts = 12; // Prevent infinite loops
 
@@ -1692,9 +2162,7 @@ export class Quickurrence {
         return targetNextMonth;
       }
 
-      nextMonth = addMonths(nextMonth, this.interval, {
-        in: this.tzContext,
-      });
+      nextMonth = this.zonedAddMonths(nextMonth, this.interval);
       attempts++;
     }
 
@@ -1756,7 +2224,7 @@ export class Quickurrence {
       if (this.count) {
         text += `, ${this.count} times`;
       } else if (this.endDate) {
-        text += ` until ${this.endDate.toLocaleDateString()}`;
+        text += ` until ${this.endDate.toLocaleDateString(undefined, { timeZone: this.timezone })}`;
       }
 
       return text;
